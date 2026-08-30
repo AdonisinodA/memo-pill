@@ -1,0 +1,30 @@
+<div class="min-h-screen bg-slate-50 px-4 py-8 text-slate-800 md:px-8">
+  <div class="mx-auto max-w-2xl">
+    <div class="mb-6 flex items-center justify-between gap-4">
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Medicamentos</h1>
+      <a href="/medicamentos/novo" class="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700">Adicionar</a>
+    </div>
+
+    <ul class="space-y-3">
+      {{#each medicamentos}}
+        <li class="flex items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm">
+          <div class="min-w-0">
+            <h2 class="truncate text-base font-semibold text-slate-800">{{nome}}</h2>
+            <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
+            <p class="mt-1 text-xs tabular-nums text-slate-400">{{#each horarios}}{{this}}{{#unless @last}} · {{/unless}}{{/each}}</p>
+          </div>
+          <form method="post" action="/medicamentos/{{id}}/remover">
+            <input type="hidden" name="_csrf" value="{{@root.csrfToken}}">
+            <button type="submit" class="rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-700">Remover</button>
+          </form>
+        </li>
+      {{else}}
+        <li class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
+          Nenhum medicamento cadastrado.
+        </li>
+      {{/each}}
+    </ul>
+
+    <a href="/doses/hoje" class="mt-6 inline-block text-sm font-medium text-teal-700 hover:text-teal-800">Voltar para hoje</a>
+  </div>
+</div>

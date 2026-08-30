@@ -1,0 +1,20 @@
+{
+  "name": "Lembrete de Medicamentos",
+  "short_name": "Lembrete",
+  "description": "Lembretes de medicamentos e acompanhamento de adesão ao tratamento.",
+  "start_url": "/doses/hoje",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0d9488",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

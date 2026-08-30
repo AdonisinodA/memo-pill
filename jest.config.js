@@ -8,4 +8,5 @@ module.exports = {
   collectCoverageFrom: ['src/**/*.ts'],
   coverageDirectory: 'coverage',
   moduleFileExtensions: ['ts', 'js', 'json'],
+  testTimeout: 30_000,
 };

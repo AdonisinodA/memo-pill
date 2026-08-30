@@ -1,0 +1,72 @@
+<div class="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 text-slate-800">
+  <div class="w-full max-w-sm">
+
+    <div class="mb-8 flex flex-col items-center gap-3">
+      <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-600">
+        <svg class="h-7 w-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" /><path d="m8.5 8.5 7 7" />
+        </svg>
+      </span>
+      <h1 class="text-xl font-semibold tracking-tight text-slate-900">
+        {{#if (eq modo "cadastro")}}Criar conta{{else}}Entrar{{/if}}
+      </h1>
+    </div>
+
+    <form method="post"
+          action="{{#if (eq modo "cadastro")}}/auth/cadastro{{else}}/auth/login{{/if}}"
+          class="space-y-4 rounded-2xl bg-white p-6 shadow-sm">
+      <input type="hidden" name="_csrf" value="{{csrfToken}}">
+
+      {{#if (eq modo "cadastro")}}
+        <div>
+          <label for="nome" class="block text-sm font-medium text-slate-700">Nome</label>
+          <input id="nome" name="nome" type="text" required minlength="2" autocomplete="name"
+                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+        </div>
+      {{/if}}
+
+      <div>
+        <label for="email" class="block text-sm font-medium text-slate-700">E-mail</label>
+        <input id="email" name="email" type="email" required autocomplete="email"
+               class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+      </div>
+
+      <div>
+        <label for="senha" class="block text-sm font-medium text-slate-700">Senha</label>
+        <input id="senha" name="senha" type="password" required minlength="8"
+               autocomplete="{{#if (eq modo "cadastro")}}new-password{{else}}current-password{{/if}}"
+               class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
+      </div>
+
+      {{#if (eq modo "cadastro")}}
+        {{!-- Consentimento específico e destacado (LGPD, Art. 11, I). --}}
+        <div class="rounded-xl bg-slate-50 p-4">
+          <label class="flex gap-3 text-xs leading-relaxed text-slate-600">
+            <input type="checkbox" name="consentimento" value="true" required
+                   class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+            <span>
+              Autorizo o tratamento dos meus dados de medicação, que são
+              <strong class="font-semibold text-slate-800">dados sensíveis de saúde</strong>,
+              exclusivamente para o envio dos meus lembretes. Não são compartilhados
+              com terceiros nem usados para fins comerciais, e posso excluir minha
+              conta e meus dados a qualquer momento.
+            </span>
+          </label>
+        </div>
+      {{/if}}
+
+      <button type="submit"
+              class="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600">
+        {{#if (eq modo "cadastro")}}Criar conta{{else}}Entrar{{/if}}
+      </button>
+    </form>
+
+    <p class="mt-6 text-center text-sm text-slate-500">
+      {{#if (eq modo "cadastro")}}
+        Já tem conta? <a href="/login" class="font-semibold text-teal-700 hover:text-teal-800">Entrar</a>
+      {{else}}
+        Ainda não tem conta? <a href="/cadastro" class="font-semibold text-teal-700 hover:text-teal-800">Criar agora</a>
+      {{/if}}
+    </p>
+  </div>
+</div>

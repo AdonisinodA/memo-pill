@@ -1,0 +1,44 @@
+<div class="min-h-screen bg-slate-50 px-4 py-8 text-slate-800 md:px-8">
+  <div class="mx-auto max-w-2xl">
+    <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Histórico</h1>
+    <p class="mt-1 text-sm text-slate-500">Últimos {{resumo.dias}} dias</p>
+
+    <div class="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+      {{#if resumo.adesao}}
+        <p class="text-4xl font-semibold tabular-nums tracking-tight text-teal-600">{{resumo.adesao}}%</p>
+        <p class="mt-1 text-sm text-slate-500">de adesão às doses já vencidas</p>
+      {{else}}
+        <p class="text-sm text-slate-500">Ainda não há doses respondidas no período.</p>
+      {{/if}}
+
+      <dl class="mt-6 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-4">
+        <div><dt class="text-xs font-medium text-slate-500">Tomadas</dt><dd class="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{{resumo.tomadas}}</dd></div>
+        <div><dt class="text-xs font-medium text-slate-500">Puladas</dt><dd class="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{{resumo.puladas}}</dd></div>
+        <div><dt class="text-xs font-medium text-slate-500">Perdidas</dt><dd class="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{{resumo.perdidas}}</dd></div>
+        <div><dt class="text-xs font-medium text-slate-500">Pendentes</dt><dd class="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{{resumo.pendentes}}</dd></div>
+      </dl>
+    </div>
+
+    <ul class="mt-6 space-y-2">
+      {{#each doses}}
+        <li class="flex items-center justify-between gap-4 rounded-xl bg-white px-4 py-3 shadow-sm">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-slate-800">{{nome}}</p>
+            <p class="text-xs text-slate-500">{{dosagem}}</p>
+          </div>
+          <div class="flex shrink-0 items-center gap-3">
+            <time datetime="{{horarioISO}}" class="text-sm tabular-nums text-slate-500">{{horario}}</time>
+            {{#if (eq status "TAKEN")}}<span class="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">Tomada</span>
+            {{else if (eq status "SKIPPED")}}<span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Pulada</span>
+            {{else if (eq status "MISSED")}}<span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Perdida</span>
+            {{else}}<span class="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">Pendente</span>{{/if}}
+          </div>
+        </li>
+      {{else}}
+        <li class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">Nenhuma dose no período.</li>
+      {{/each}}
+    </ul>
+
+    <a href="/doses/hoje" class="mt-6 inline-block text-sm font-medium text-teal-700 hover:text-teal-800">Voltar para hoje</a>
+  </div>
+</div>
