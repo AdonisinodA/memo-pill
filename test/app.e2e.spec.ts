@@ -86,6 +86,49 @@ describe('Aplicação (e2e)', () => {
 
   afterAll(() => app?.close());
 
+  describe('layout das páginas', () => {
+    /**
+     * O pacote `hbs` não aplica layout sozinho. Sem `view options.layout`, cada
+     * view é servida como fragmento — sem <html>, sem <head> e sem o <link> do
+     * CSS —, e a página abre sem estilo nenhum no navegador. Nenhuma asserção
+     * sobre o corpo da view percebe isso, daí estes testes olharem o documento.
+     */
+    const exigirDocumentoCompleto = (html: string) => {
+      expect(html).toMatch(/^\s*<!DOCTYPE html>/i);
+      expect(html).toContain('<html lang="pt-BR"');
+      expect(html).toContain('</html>');
+      expect(html).toContain('href="/css/app.css"');
+      expect(html).toContain('src="/js/app.js"');
+      expect(html).toContain('href="/manifest.webmanifest"');
+    };
+
+    it('serve /login como documento completo, com o CSS ligado', async () => {
+      const res = await request(http).get('/login').expect(200);
+      exigirDocumentoCompleto(res.text);
+      expect(res.text).toContain('<title>Entrar · Lembrete de Medicamentos</title>');
+    });
+
+    it('serve /cadastro como documento completo', async () => {
+      exigirDocumentoCompleto((await request(http).get('/cadastro').expect(200)).text);
+    });
+
+    it('serve o dashboard como documento completo', async () => {
+      const res = await request(http)
+        .get('/doses/hoje')
+        .set('Cookie', principal.cookies)
+        .expect(200);
+      exigirDocumentoCompleto(res.text);
+    });
+
+    it('serve o histórico como documento completo', async () => {
+      const res = await request(http)
+        .get('/historico')
+        .set('Cookie', principal.cookies)
+        .expect(200);
+      exigirDocumentoCompleto(res.text);
+    });
+  });
+
   describe('páginas públicas', () => {
     it('serve a tela de login com campo CSRF', async () => {
       const res = await request(http).get('/login').expect(200);
@@ -108,8 +151,27 @@ describe('Aplicação (e2e)', () => {
     it('aplica os cabeçalhos de segurança do helmet', async () => {
       const res = await request(http).get('/login').expect(200);
       expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+      expect(res.headers['content-security-policy']).toContain("style-src 'self'");
       expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
       expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('não envia upgrade-insecure-requests fora de produção', async () => {
+      // Sob http://localhost a diretiva faria o navegador buscar CSS e JS em
+      // https, derrubando os assets em silêncio.
+      const res = await request(http).get('/login').expect(200);
+      expect(res.headers['content-security-policy']).not.toContain(
+        'upgrade-insecure-requests',
+      );
+      expect(res.headers['strict-transport-security']).toBeUndefined();
+    });
+
+    it('serve o CSS e o JS da própria origem, como a CSP exige', async () => {
+      const css = await request(http).get('/css/app.css').expect(200);
+      expect(css.headers['content-type']).toContain('text/css');
+
+      const js = await request(http).get('/js/app.js').expect(200);
+      expect(js.headers['content-type']).toContain('javascript');
     });
   });
 
