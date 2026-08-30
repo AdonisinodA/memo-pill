@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{#if title}}{{title}} · {{/if}}Lembrete de Medicamentos</title>
+
+  {{!-- PWA: exigido para instalação na tela inicial e Web Push (ADR-001 §2.1) --}}
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0d9488">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  {{!-- TODO: substituir pelo CSS compilado (npx tailwindcss -o public/css/app.css --minify).
+       A Play CDN serve apenas para desenvolvimento e não deve ir para produção. --}}
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full bg-slate-50 font-sans">
+  {{{body}}}
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+    }
+  </script>
+</body>
+</html>
