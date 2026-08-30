@@ -11,14 +11,14 @@
       <input type="hidden" name="_csrf" value="{{csrfToken}}">
 
       <div>
-        <label for="nome" class="block text-sm font-medium text-slate-700">Nome</label>
-        <input id="nome" name="nome" type="text" required minlength="2" placeholder="Losartana"
+        <label for="name" class="block text-sm font-medium text-slate-700">Nome</label>
+        <input id="name" name="name" type="text" required minlength="2" placeholder="Losartana"
                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
       </div>
 
       <div>
-        <label for="dosagem" class="block text-sm font-medium text-slate-700">Dosagem</label>
-        <input id="dosagem" name="dosagem" type="text" required placeholder="50 mg — 1 comprimido"
+        <label for="dosage" class="block text-sm font-medium text-slate-700">Dosagem</label>
+        <input id="dosage" name="dosage" type="text" required placeholder="50 mg — 1 comprimido"
                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
       </div>
 
@@ -27,7 +27,7 @@
         <p class="mt-0.5 text-xs text-slate-500">Um horário por linha de campo. Deixe em branco os que não usar.</p>
         <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {{#each (range 4)}}
-            <input name="horarios[]" type="time"
+            <input name="times[]" type="time"
                    class="rounded-xl border border-slate-300 px-3 py-2.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
           {{/each}}
         </div>
@@ -35,13 +35,13 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label for="inicioEm" class="block text-sm font-medium text-slate-700">Início</label>
-          <input id="inicioEm" name="inicioEm" type="date" required
+          <label for="startsOn" class="block text-sm font-medium text-slate-700">Início</label>
+          <input id="startsOn" name="startsOn" type="date" required
                  class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
         </div>
         <div>
-          <label for="fimEm" class="block text-sm font-medium text-slate-700">Fim <span class="font-normal text-slate-400">(opcional)</span></label>
-          <input id="fimEm" name="fimEm" type="date"
+          <label for="endsOn" class="block text-sm font-medium text-slate-700">Fim <span class="font-normal text-slate-400">(opcional)</span></label>
+          <input id="endsOn" name="endsOn" type="date"
                  class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20">
         </div>
       </div>

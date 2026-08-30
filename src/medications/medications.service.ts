@@ -11,29 +11,29 @@ import {
 import { Clock } from "../common/time/clock";
 import { DoseLog } from "../doses/dose-log.entity";
 import {
-	fimDoHorizonte,
-	gerarInstantes,
-	type Posologia,
+	horizonEnd,
+	generateInstants,
+	type Regimen,
 } from "../doses/dose-schedule";
 import { DoseStatus } from "../doses/dose-status.enum";
 import type {
-	AtualizarMedicamentoDto,
-	CriarMedicamentoDto,
-} from "./dto/medicamento.dto";
+	UpdateMedicationDto,
+	CreateMedicationDto,
+} from "./dto/medication.dto";
 import { Medication } from "./medication.entity";
 
 @Injectable()
 export class MedicationsService {
 	constructor(
-    @InjectRepository(Medication) private readonly medicamentos: Repository<Medication>,
+    @InjectRepository(Medication) private readonly medications: Repository<Medication>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly clock: Clock,
   ) {}
 
-	listar(userId: string): Promise<Medication[]> {
-		return this.medicamentos.find({
+	list(userId: string): Promise<Medication[]> {
+		return this.medications.find({
 			where: { userId, deletedAt: IsNull() },
-			order: { nome: "ASC" },
+			order: { name: "ASC" },
 		});
 	}
 
@@ -41,30 +41,30 @@ export class MedicationsService {
 	 * Cria o medicamento e materializa as doses do horizonte na mesma transação
 	 * (ADR-001 §2.2). Medicamento sem doses seria um lembrete que nunca dispara.
 	 */
-	async criar(
+	async create(
 		userId: string,
 		timezone: string,
-		dto: CriarMedicamentoDto,
+		dto: CreateMedicationDto,
 	): Promise<Medication> {
 		return this.dataSource.transaction(async (manager) => {
-			const medicamento = await manager.save(
+			const medication = await manager.save(
 				manager.create(Medication, {
 					userId,
-					nome: dto.nome,
-					dosagem: dto.dosagem,
-					horarios: dto.horarios,
-					inicioEm: dto.inicioEm,
-					fimEm: dto.fimEm ?? null,
+					name: dto.name,
+					dosage: dto.dosage,
+					times: dto.times,
+					startsOn: dto.startsOn,
+					endsOn: dto.endsOn ?? null,
 					deletedAt: null,
 				}),
 			);
-			await this.materializar(
+			await this.materialize(
 				manager,
-				medicamento,
+				medication,
 				timezone,
 				this.clock.nowSeconds(),
 			);
-			return medicamento;
+			return medication;
 		});
 	}
 
@@ -72,13 +72,13 @@ export class MedicationsService {
 	 * Soft delete (ADR-001 §2.2): o histórico analítico de doses já tomadas
 	 * permanece acessível; apenas as doses futuras ainda pendentes são canceladas.
 	 */
-	async remover(userId: string, id: string): Promise<void> {
+	async remove(userId: string, id: string): Promise<void> {
 		await this.dataSource.transaction(async (manager) => {
-			const medicamento = await this.exigir(manager, userId, id);
-			const agora = this.clock.nowSeconds();
-			medicamento.deletedAt = agora;
-			await manager.save(medicamento);
-			await this.cancelarFuturas(manager, medicamento.id, agora);
+			const medication = await this.requireOwned(manager, userId, id);
+			const now = this.clock.nowSeconds();
+			medication.deletedAt = now;
+			await manager.save(medication);
+			await this.cancelFuture(manager, medication.id, now);
 		});
 	}
 
@@ -86,28 +86,28 @@ export class MedicationsService {
 	 * Altera a posologia. As doses futuras já materializadas ficam obsoletas,
 	 * então são canceladas e regeradas — mesma mecânica da exclusão.
 	 */
-	async atualizar(
+	async update(
 		userId: string,
 		timezone: string,
 		id: string,
-		dto: AtualizarMedicamentoDto,
+		dto: UpdateMedicationDto,
 	): Promise<Medication> {
 		return this.dataSource.transaction(async (manager) => {
-			const medicamento = await this.exigir(manager, userId, id);
-			const agora = this.clock.nowSeconds();
+			const medication = await this.requireOwned(manager, userId, id);
+			const now = this.clock.nowSeconds();
 
-			Object.assign(medicamento, {
-				nome: dto.nome,
-				dosagem: dto.dosagem,
-				horarios: dto.horarios,
-				inicioEm: dto.inicioEm,
-				fimEm: dto.fimEm ?? null,
+			Object.assign(medication, {
+				name: dto.name,
+				dosage: dto.dosage,
+				times: dto.times,
+				startsOn: dto.startsOn,
+				endsOn: dto.endsOn ?? null,
 			});
-			await manager.save(medicamento);
+			await manager.save(medication);
 
-			await this.cancelarFuturas(manager, medicamento.id, agora);
-			await this.materializar(manager, medicamento, timezone, agora);
-			return medicamento;
+			await this.cancelFuture(manager, medication.id, now);
+			await this.materialize(manager, medication, timezone, now);
+			return medication;
 		});
 	}
 
@@ -118,21 +118,21 @@ export class MedicationsService {
 	 *
 	 * @returns quantas doses foram criadas.
 	 */
-	async estenderHorizonte(): Promise<number> {
-		const agora = this.clock.nowSeconds();
-		const ativos = await this.medicamentos.find({
+	async extendHorizon(): Promise<number> {
+		const now = this.clock.nowSeconds();
+		const active = await this.medications.find({
 			where: { deletedAt: IsNull() },
 			relations: { user: true },
 		});
 
-		let criadas = 0;
-		for (const medicamento of ativos) {
-			const timezone = medicamento.user?.timezone ?? "UTC";
-			criadas += await this.dataSource.transaction((manager) =>
-				this.materializar(manager, medicamento, timezone, agora),
+		let created = 0;
+		for (const medication of active) {
+			const timezone = medication.user?.timezone ?? "UTC";
+			created += await this.dataSource.transaction((manager) =>
+				this.materialize(manager, medication, timezone, now),
 			);
 		}
-		return criadas;
+		return created;
 	}
 
 	/**
@@ -141,71 +141,71 @@ export class MedicationsService {
 	 *
 	 * @returns quantas doses foram criadas.
 	 */
-	private async materializar(
+	private async materialize(
 		manager: EntityManager,
-		medicamento: Medication,
+		medication: Medication,
 		timezone: string,
-		agora: number,
+		now: number,
 	): Promise<number> {
-		const posologia: Posologia = {
-			horarios: medicamento.horarios,
-			inicioEm: medicamento.inicioEm,
-			fimEm: medicamento.fimEm,
+		const regimen: Regimen = {
+			times: medication.times,
+			startsOn: medication.startsOn,
+			endsOn: medication.endsOn,
 			timezone,
 		};
 
-		const { ultima } = (await manager
+		const { last } = (await manager
 			.createQueryBuilder(DoseLog, "d")
-			.select("MAX(d.scheduled_for)", "ultima")
-			.where("d.medication_id = :id", { id: medicamento.id })
-			.andWhere("d.status != :cancelada", { cancelada: DoseStatus.CANCELED })
-			.getRawOne<{ ultima: number | null }>()) ?? { ultima: null };
+			.select("MAX(d.scheduled_for)", "last")
+			.where("d.medication_id = :id", { id: medication.id })
+			.andWhere("d.status != :canceled", { canceled: DoseStatus.CANCELED })
+			.getRawOne<{ last: number | null }>()) ?? { last: null };
 
-		const desde = Math.max(agora, ultima ?? 0);
-		const instantes = gerarInstantes(posologia, {
-			desde,
-			ate: fimDoHorizonte(posologia, agora),
+		const from = Math.max(now, last ?? 0);
+		const instants = generateInstants(regimen, {
+			from,
+			to: horizonEnd(regimen, now),
 		});
-		if (instantes.length === 0) return 0;
+		if (instants.length === 0) return 0;
 
 		await manager.insert(
 			DoseLog,
-			instantes.map((scheduledFor) => ({
-				medicationId: medicamento.id,
+			instants.map((scheduledFor) => ({
+				medicationId: medication.id,
 				scheduledFor,
 				status: DoseStatus.PENDING,
 				notifiedAt: null,
 				respondedAt: null,
 			})),
 		);
-		return instantes.length;
+		return instants.length;
 	}
 
 	/** Cancela apenas doses futuras ainda pendentes; o passado é histórico. */
-	private async cancelarFuturas(
+	private async cancelFuture(
 		manager: EntityManager,
 		medicationId: string,
-		agora: number,
+		now: number,
 	): Promise<void> {
 		await manager
 			.createQueryBuilder()
 			.update(DoseLog)
 			.set({ status: DoseStatus.CANCELED })
 			.where("medication_id = :medicationId", { medicationId })
-			.andWhere("status = :pendente", { pendente: DoseStatus.PENDING })
-			.andWhere("scheduled_for > :agora", { agora })
+			.andWhere("status = :pending", { pending: DoseStatus.PENDING })
+			.andWhere("scheduled_for > :now", { now })
 			.execute();
 	}
 
-	private async exigir(
+	private async requireOwned(
 		manager: EntityManager,
 		userId: string,
 		id: string,
 	): Promise<Medication> {
-		const medicamento = await manager.findOne(Medication, {
+		const medication = await manager.findOne(Medication, {
 			where: { id, userId, deletedAt: IsNull() },
 		});
-		if (!medicamento) throw new NotFoundException("Medicamento não encontrado");
-		return medicamento;
+		if (!medication) throw new NotFoundException("Medicamento não encontrado");
+		return medication;
 	}
 }

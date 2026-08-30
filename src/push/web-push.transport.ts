@@ -16,7 +16,7 @@ export class PushDeliveryError extends Error {
  * testável sem tocar em FCM/APNs.
  */
 export abstract class WebPushTransport {
-  abstract enviar(inscricao: PushSubscription, payload: string): Promise<void>;
+  abstract send(subscription: PushSubscription, payload: string): Promise<void>;
 }
 
 @Injectable()
@@ -30,18 +30,18 @@ export class WebPushHttpTransport extends WebPushTransport {
     );
   }
 
-  async enviar(inscricao: PushSubscription, payload: string): Promise<void> {
+  async send(subscription: PushSubscription, payload: string): Promise<void> {
     try {
       await webpush.sendNotification(
         {
-          endpoint: inscricao.endpoint,
-          keys: { p256dh: inscricao.p256dh, auth: inscricao.auth },
+          endpoint: subscription.endpoint,
+          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
         },
         payload,
       );
-    } catch (erro) {
-      const status = (erro as { statusCode?: number }).statusCode ?? 0;
-      throw new PushDeliveryError(status, (erro as Error).message);
+    } catch (error) {
+      const status = (error as { statusCode?: number }).statusCode ?? 0;
+      throw new PushDeliveryError(status, (error as Error).message);
     }
   }
 }

@@ -4,13 +4,13 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { DateTime } from 'luxon';
-import { SessaoGuard } from '../auth/sessao.guard';
+import { SessionGuard } from '../auth/session.guard';
 import { Clock } from '../common/time/clock';
 import { DoseStatus } from './dose-status.enum';
-import { DosesService, StatusRegistravel } from './doses.service';
+import { DosesService, RecordableStatus } from './doses.service';
 
 @Controller()
-@UseGuards(SessaoGuard)
+@UseGuards(SessionGuard)
 export class DosesController {
   constructor(
     private readonly doses: DosesService,
@@ -23,27 +23,27 @@ export class DosesController {
 
   @Get('doses/hoje')
   @Render('dashboard')
-  async hoje(@Req() req: Request) {
+  async today(@Req() req: Request) {
     const user = req.user!;
     return {
       title: 'Hoje',
       csrfToken: req.csrfToken,
-      usuario: { nome: user.nome },
-      dataAtual: DateTime.fromSeconds(this.clock.nowSeconds(), {
+      user: { name: user.name },
+      currentDate: DateTime.fromSeconds(this.clock.nowSeconds(), {
         zone: user.timezone,
       })
         .setLocale('pt-BR')
         .toFormat("cccc, d 'de' LLLL"),
-      medicamentos: await this.doses.doDia(user.id, user.timezone),
+      doses: await this.doses.forToday(user.id, user.timezone),
     };
   }
 
   @Get('historico')
-  @Render('historico')
-  async historico(@Req() req: Request) {
+  @Render('history')
+  async history(@Req() req: Request) {
     const user = req.user!;
-    const { resumo, doses } = await this.doses.historico(user.id, user.timezone);
-    return { title: 'Histórico', csrfToken: req.csrfToken, resumo, doses };
+    const { summary, doses } = await this.doses.history(user.id, user.timezone);
+    return { title: 'Histórico', csrfToken: req.csrfToken, summary, doses };
   }
 
   /**
@@ -52,32 +52,32 @@ export class DosesController {
    * origem, e não trafega pelo push service (ADR-001 §2.4).
    */
   @Get('doses/:id/resumo')
-  async resumo(
+  async summary(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const user = req.user!;
-    const doses = await this.doses.doDia(user.id, user.timezone);
+    const doses = await this.doses.forToday(user.id, user.timezone);
     const dose = doses.find((d) => d.id === id);
-    return dose ?? { id, nome: 'Seu medicamento', dosagem: '', horario: '' };
+    return dose ?? { id, name: 'Seu medicamento', dosage: '', time: '' };
   }
 
   @Post('doses/:id/taken')
-  registrarTomada(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    return this.registrar(req, id, DoseStatus.TAKEN);
+  recordTaken(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.record(req, id, DoseStatus.TAKEN);
   }
 
   @Post('doses/:id/skipped')
-  registrarPulo(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    return this.registrar(req, id, DoseStatus.SKIPPED);
+  recordSkipped(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.record(req, id, DoseStatus.SKIPPED);
   }
 
   /**
    * Formulário HBS espera redirect; o Service Worker espera JSON.
    * O `Accept` da requisição decide.
    */
-  private async registrar(req: Request, id: string, status: StatusRegistravel) {
-    const dose = await this.doses.registrar(req.user!.id, id, status);
+  private async record(req: Request, id: string, status: RecordableStatus) {
+    const dose = await this.doses.record(req.user!.id, id, status);
     if (req.accepts(['html', 'json']) === 'html') {
       return { url: '/doses/hoje', statusCode: 303 };
     }

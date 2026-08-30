@@ -7,30 +7,30 @@ import { DoseLog } from './dose-log.entity';
 import { DoseStatus, TERMINAL_STATUSES } from './dose-status.enum';
 
 /** Modelo de view consumido por `views/dashboard.hbs`. */
-export interface DoseDoDia {
+export interface DoseView {
   id: string;
-  nome: string;
-  dosagem: string;
+  name: string;
+  dosage: string;
   /** Horário local "HH:mm", já convertido do UTC para o fuso do usuário. */
-  horario: string;
+  time: string;
   /** Instante em UTC, para o atributo `datetime` do elemento <time>. */
-  horarioISO: string;
+  timeISO: string;
   status: DoseStatus;
 }
 
-export interface ResumoAdesao {
-  dias: number;
+export interface AdherenceSummary {
+  days: number;
   total: number;
-  tomadas: number;
-  puladas: number;
-  perdidas: number;
-  pendentes: number;
+  taken: number;
+  skipped: number;
+  missed: number;
+  pending: number;
   /** Percentual de doses tomadas sobre as já respondidas; nulo se não houver. */
-  adesao: number | null;
+  adherence: number | null;
 }
 
 /** Status que o usuário pode registrar a partir de uma dose pendente. */
-export type StatusRegistravel = DoseStatus.TAKEN | DoseStatus.SKIPPED;
+export type RecordableStatus = DoseStatus.TAKEN | DoseStatus.SKIPPED;
 
 @Injectable()
 export class DosesService {
@@ -43,30 +43,30 @@ export class DosesService {
    * Doses do dia corrente no fuso do usuário. Canceladas não aparecem: elas
    * representam posologia que deixou de valer, não adesão.
    */
-  async doDia(userId: string, timezone: string): Promise<DoseDoDia[]> {
-    const agora = DateTime.fromSeconds(this.clock.nowSeconds(), { zone: timezone });
-    const inicio = Math.floor(agora.startOf('day').toSeconds());
-    const fim = Math.floor(agora.endOf('day').toSeconds());
+  async forToday(userId: string, timezone: string): Promise<DoseView[]> {
+    const now = DateTime.fromSeconds(this.clock.nowSeconds(), { zone: timezone });
+    const start = Math.floor(now.startOf('day').toSeconds());
+    const end = Math.floor(now.endOf('day').toSeconds());
 
-    const registros = await this.doses
+    const records = await this.doses
       .createQueryBuilder('d')
       .innerJoinAndSelect('d.medication', 'm')
       .where('m.user_id = :userId', { userId })
-      .andWhere('d.scheduled_for BETWEEN :inicio AND :fim', { inicio, fim })
-      .andWhere('d.status != :cancelada', { cancelada: DoseStatus.CANCELED })
+      .andWhere('d.scheduled_for BETWEEN :start AND :end', { start, end })
+      .andWhere('d.status != :canceled', { canceled: DoseStatus.CANCELED })
       .orderBy('d.scheduled_for', 'ASC')
       .getMany();
 
-    return registros.map((d) => this.paraView(d, timezone));
+    return records.map((d) => this.toView(d, timezone));
   }
 
-  private paraView(d: DoseLog, timezone: string): DoseDoDia {
+  private toView(d: DoseLog, timezone: string): DoseView {
     return {
       id: d.id,
-      nome: d.medication!.nome,
-      dosagem: d.medication!.dosagem,
-      horario: DateTime.fromSeconds(d.scheduledFor, { zone: timezone }).toFormat('HH:mm'),
-      horarioISO: DateTime.fromSeconds(d.scheduledFor, { zone: 'utc' }).toISO()!,
+      name: d.medication!.name,
+      dosage: d.medication!.dosage,
+      time: DateTime.fromSeconds(d.scheduledFor, { zone: timezone }).toFormat('HH:mm'),
+      timeISO: DateTime.fromSeconds(d.scheduledFor, { zone: 'utc' }).toISO()!,
       status: d.status,
     };
   }
@@ -76,39 +76,39 @@ export class DosesService {
    * Inclui doses de medicamentos removidos: o soft delete existe justamente
    * para que esse histórico não desapareça.
    */
-  async historico(
+  async history(
     userId: string,
     timezone: string,
-    dias = 30,
-  ): Promise<{ resumo: ResumoAdesao; doses: DoseDoDia[] }> {
-    const agora = DateTime.fromSeconds(this.clock.nowSeconds(), { zone: timezone });
-    const inicio = Math.floor(agora.minus({ days: dias }).startOf('day').toSeconds());
-    const fim = Math.floor(agora.endOf('day').toSeconds());
+    days = 30,
+  ): Promise<{ summary: AdherenceSummary; doses: DoseView[] }> {
+    const now = DateTime.fromSeconds(this.clock.nowSeconds(), { zone: timezone });
+    const start = Math.floor(now.minus({ days: days }).startOf('day').toSeconds());
+    const end = Math.floor(now.endOf('day').toSeconds());
 
-    const registros = await this.doses
+    const records = await this.doses
       .createQueryBuilder('d')
       .innerJoinAndSelect('d.medication', 'm')
       .where('m.user_id = :userId', { userId })
-      .andWhere('d.scheduled_for BETWEEN :inicio AND :fim', { inicio, fim })
-      .andWhere('d.status != :cancelada', { cancelada: DoseStatus.CANCELED })
+      .andWhere('d.scheduled_for BETWEEN :start AND :end', { start, end })
+      .andWhere('d.status != :canceled', { canceled: DoseStatus.CANCELED })
       .orderBy('d.scheduled_for', 'DESC')
       .getMany();
 
-    const doses = registros.map((d) => this.paraView(d, timezone));
-    const conta = (s: DoseStatus) => doses.filter((d) => d.status === s).length;
-    const tomadas = conta(DoseStatus.TAKEN);
-    const respondidas = tomadas + conta(DoseStatus.SKIPPED) + conta(DoseStatus.MISSED);
+    const doses = records.map((d) => this.toView(d, timezone));
+    const count = (s: DoseStatus) => doses.filter((d) => d.status === s).length;
+    const taken = count(DoseStatus.TAKEN);
+    const answered = taken + count(DoseStatus.SKIPPED) + count(DoseStatus.MISSED);
 
     return {
-      resumo: {
-        dias,
+      summary: {
+        days,
         total: doses.length,
-        tomadas,
-        puladas: conta(DoseStatus.SKIPPED),
-        perdidas: conta(DoseStatus.MISSED),
-        pendentes: conta(DoseStatus.PENDING),
+        taken,
+        skipped: count(DoseStatus.SKIPPED),
+        missed: count(DoseStatus.MISSED),
+        pending: count(DoseStatus.PENDING),
         // Adesão só faz sentido sobre doses cujo horário já passou.
-        adesao: respondidas === 0 ? null : Math.round((tomadas / respondidas) * 100),
+        adherence: answered === 0 ? null : Math.round((taken / answered) * 100),
       },
       doses,
     };
@@ -120,10 +120,10 @@ export class DosesService {
    * É idempotente para o mesmo status — o usuário pode tocar duas vezes na ação
    * da notificação, e o segundo toque não deve virar erro.
    */
-  async registrar(
+  async record(
     userId: string,
     doseId: string,
-    status: StatusRegistravel,
+    status: RecordableStatus,
   ): Promise<DoseLog> {
     const dose = await this.doses
       .createQueryBuilder('d')

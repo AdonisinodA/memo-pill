@@ -6,10 +6,10 @@ import { CsrfController } from '../common/csrf/csrf.controller';
 import { User } from '../users/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService, BCRYPT_ROUNDS } from './auth.service';
-import { SessaoGuard } from './sessao.guard';
+import { SessionGuard } from './session.guard';
 
 /** Custo do bcrypt (ADR-001 §2.4). Testes usam custo baixo. */
-const CUSTO_BCRYPT = 12;
+const BCRYPT_COST = 12;
 
 @Module({
   imports: [
@@ -24,9 +24,9 @@ const CUSTO_BCRYPT = 12;
   controllers: [AuthController, CsrfController],
   providers: [
     AuthService,
-    SessaoGuard,
-    { provide: BCRYPT_ROUNDS, useValue: CUSTO_BCRYPT },
+    SessionGuard,
+    { provide: BCRYPT_ROUNDS, useValue: BCRYPT_COST },
   ],
-  exports: [AuthService, SessaoGuard],
+  exports: [AuthService, SessionGuard],
 })
 export class AuthModule {}

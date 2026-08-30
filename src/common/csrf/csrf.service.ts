@@ -14,14 +14,14 @@ export const CSRF_HEADER = 'x-csrf-token';
  */
 @Injectable()
 export class CsrfService {
-  gerar(): string {
+  generate(): string {
     return randomBytes(32).toString('hex');
   }
 
   /** Comparação em tempo constante, para não vazar o token por temporização. */
-  conferir(doCookie: string | undefined, doPedido: unknown): boolean {
-    if (typeof doCookie !== 'string' || typeof doPedido !== 'string') return false;
-    if (doCookie.length === 0 || doCookie.length !== doPedido.length) return false;
-    return timingSafeEqual(Buffer.from(doCookie), Buffer.from(doPedido));
+  matches(fromCookie: string | undefined, fromRequest: unknown): boolean {
+    if (typeof fromCookie !== 'string' || typeof fromRequest !== 'string') return false;
+    if (fromCookie.length === 0 || fromCookie.length !== fromRequest.length) return false;
+    return timingSafeEqual(Buffer.from(fromCookie), Buffer.from(fromRequest));
   }
 }

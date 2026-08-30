@@ -5,10 +5,10 @@ import { Medication } from '../../src/medications/medication.entity';
 
 export const SP = 'America/Sao_Paulo';
 
-export const seg = (iso: string, zone = 'utc') =>
+export const sec = (iso: string, zone = 'utc') =>
   Math.floor(DateTime.fromISO(iso, { zone }).toSeconds());
 
-export async function criarUsuario(
+export async function createUser(
   ds: DataSource,
   over: Partial<User> = {},
 ): Promise<User> {
@@ -16,15 +16,15 @@ export async function criarUsuario(
     ds.getRepository(User).create({
       email: `user-${Math.random().toString(36).slice(2)}@example.com`,
       passwordHash: 'hash-fake',
-      nome: 'Adonis',
+      name: 'Adonis',
       timezone: SP,
-      consentAt: seg('2026-08-01T00:00:00Z'),
+      consentAt: sec('2026-08-01T00:00:00Z'),
       ...over,
     }),
   );
 }
 
-export async function criarMedicamento(
+export async function createMedication(
   ds: DataSource,
   userId: string,
   over: Partial<Medication> = {},
@@ -32,11 +32,11 @@ export async function criarMedicamento(
   return ds.getRepository(Medication).save(
     ds.getRepository(Medication).create({
       userId,
-      nome: 'Losartana',
-      dosagem: '50 mg',
-      horarios: ['08:00', '20:00'],
-      inicioEm: '2026-08-30',
-      fimEm: null,
+      name: 'Losartana',
+      dosage: '50 mg',
+      times: ['08:00', '20:00'],
+      startsOn: '2026-08-30',
+      endsOn: null,
       deletedAt: null,
       ...over,
     }),

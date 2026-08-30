@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { CSRF_COOKIE, CSRF_HEADER, CsrfService } from './csrf.service';
 
 /** Métodos sem efeito colateral dispensam validação. */
-const METODOS_SEGUROS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -19,7 +19,7 @@ export class CsrfMiddleware implements NestMiddleware {
     let token = req.cookies?.[CSRF_COOKIE] as string | undefined;
 
     if (!token) {
-      token = this.csrf.gerar();
+      token = this.csrf.generate();
       res.cookie(CSRF_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -29,13 +29,13 @@ export class CsrfMiddleware implements NestMiddleware {
     }
     req.csrfToken = token;
 
-    if (METODOS_SEGUROS.has(req.method)) return next();
+    if (SAFE_METHODS.has(req.method)) return next();
 
-    const enviado =
+    const submitted =
       (req.body as Record<string, unknown> | undefined)?._csrf ??
       req.headers[CSRF_HEADER];
 
-    if (!this.csrf.conferir(token, enviado)) {
+    if (!this.csrf.matches(token, submitted)) {
       throw new ForbiddenException('Token CSRF inválido ou ausente');
     }
 

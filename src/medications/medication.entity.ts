@@ -18,22 +18,22 @@ export class Medication {
   user?: User;
 
   @Column()
-  nome!: string;
+  name!: string;
 
   @Column()
-  dosagem!: string;
+  dosage!: string;
 
   /** Horários locais no formato "HH:mm", ex.: ["08:00","20:00"]. */
-  @Column({ name: 'horarios', type: 'simple-json' })
-  horarios!: string[];
+  @Column({ name: 'times', type: 'simple-json' })
+  times!: string[];
 
   /** Data local de início, "YYYY-MM-DD". */
-  @Column({ name: 'inicio_em' })
-  inicioEm!: string;
+  @Column({ name: 'starts_on' })
+  startsOn!: string;
 
   /** Data local de término, "YYYY-MM-DD". Nulo = uso contínuo. */
-  @Column({ name: 'fim_em', type: 'text', nullable: true })
-  fimEm!: string | null;
+  @Column({ name: 'ends_on', type: 'text', nullable: true })
+  endsOn!: string | null;
 
   /**
    * Soft delete (ADR-001 §2.2): preserva o histórico analítico de doses já

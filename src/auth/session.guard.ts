@@ -21,7 +21,7 @@ declare module 'express-serve-static-core' {
  * memória no cliente e não sobrevive a um page load.
  */
 @Injectable()
-export class SessaoGuard implements CanActivate {
+export class SessionGuard implements CanActivate {
   constructor(private readonly auth: AuthService) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -29,7 +29,7 @@ export class SessaoGuard implements CanActivate {
     const token = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (!token) throw new UnauthorizedException('Sessão ausente');
 
-    req.user = await this.auth.usuarioDoToken(token);
+    req.user = await this.auth.userFromToken(token);
     return true;
   }
 }

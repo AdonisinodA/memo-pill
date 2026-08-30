@@ -8,14 +8,14 @@ import type { Request, Response } from 'express';
  * cru. Chamadas de API seguem recebendo 401 para o cliente tratar.
  */
 @Catch(UnauthorizedException)
-export class NaoAutenticadoFilter implements ExceptionFilter {
+export class UnauthenticatedFilter implements ExceptionFilter {
   catch(exception: UnauthorizedException, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
 
-    const ehNavegacao = req.method === 'GET' && req.accepts(['html', 'json']) === 'html';
-    if (ehNavegacao) {
+    const isNavigation = req.method === 'GET' && req.accepts(['html', 'json']) === 'html';
+    if (isNavigation) {
       res.redirect('/login');
       return;
     }

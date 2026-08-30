@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { setTimeout as aguardar } from 'node:timers/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { AuthModule } from '../auth/auth.module';
 import { PushController } from './push.controller';
 import { PushService, SLEEP } from './push.service';
@@ -13,7 +13,7 @@ import { WebPushHttpTransport, WebPushTransport } from './web-push.transport';
   providers: [
     PushService,
     { provide: WebPushTransport, useClass: WebPushHttpTransport },
-    { provide: SLEEP, useValue: (ms: number) => aguardar(ms) },
+    { provide: SLEEP, useValue: (ms: number) => delay(ms) },
   ],
   exports: [PushService],
 })

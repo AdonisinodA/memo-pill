@@ -6,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AppModule } from './app.module';
-import { configurarApp } from './configurar-app';
+import { configureApp } from './configure-app';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -17,7 +17,7 @@ async function bootstrap(): Promise<void> {
     mkdirSync(dirname(caminhoBanco), { recursive: true });
   }
 
-  configurarApp(app);
+  configureApp(app);
   app.enableShutdownHooks();
 
   const port = config.getOrThrow<number>('port');

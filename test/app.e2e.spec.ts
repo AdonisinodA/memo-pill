@@ -12,25 +12,25 @@ process.env.VAPID_PUBLIC_KEY =
   'BA-jBHOxdsNMJwA__FFD5TApJ2-kIEVXFcq4isiEKY9moaqH096RU0CE_sJsGISY4ph5Gzxeh4KyN9iEr90RdiM';
 process.env.VAPID_PRIVATE_KEY = '5SLE1FySCdUVw7Empa3xzElVI3ODUJotQYa73KuQTCc';
 // Limite geral folgado; as rotas de credencial mantêm o limite real de 5/min.
-process.env.THROTTLE_GERAL = '1000';
+process.env.THROTTLE_GENERAL = '1000';
 
 import { AppModule } from '../src/app.module';
-import { configurarApp } from '../src/configurar-app';
+import { configureApp } from '../src/configure-app';
 import { Clock, FixedClock } from '../src/common/time/clock';
-import { seg } from './helpers/fixtures';
+import { sec } from './helpers/fixtures';
 
 /** 30/08/2026 às 12:00 em São Paulo. */
-const AGORA = seg('2026-08-30T15:00:00Z');
+const NOW = sec('2026-08-30T15:00:00Z');
 const HOJE = '2026-08-30';
 
-const pegarCookie = (res: request.Response, nome: string): string | undefined =>
+const getCookie = (res: request.Response, name: string): string | undefined =>
   ([] as string[])
     .concat((res.headers['set-cookie'] as unknown as string[]) ?? [])
-    .find((c) => c.startsWith(`${nome}=`));
+    .find((c) => c.startsWith(`${name}=`));
 
-const valorDoCookie = (cookie: string): string => cookie.split(';')[0].split('=')[1];
+const cookieValue = (cookie: string): string => cookie.split(';')[0].split('=')[1];
 
-interface Sessao {
+interface Session {
   cookies: string[];
   csrfToken: string;
   refresh: string;
@@ -41,14 +41,14 @@ describe('Aplicação (e2e)', () => {
   let http: Server;
   // Rotas de credencial têm limite de 5/min: as sessões são criadas uma vez
   // e reaproveitadas, em vez de uma por teste.
-  let principal: Sessao;
-  let dono: Sessao;
-  let intruso: Sessao;
+  let principal: Session;
+  let owner: Session;
+  let intruder: Session;
 
-  async function abrirSessao(email: string): Promise<Sessao> {
+  async function openSession(email: string): Promise<Session> {
     const inicial = await request(http).get('/cadastro');
-    const csrfCookie = pegarCookie(inicial, 'csrf_token')!;
-    const csrfToken = valorDoCookie(csrfCookie);
+    const csrfCookie = getCookie(inicial, 'csrf_token')!;
+    const csrfToken = cookieValue(csrfCookie);
 
     const res = await request(http)
       .post('/auth/cadastro')
@@ -57,13 +57,13 @@ describe('Aplicação (e2e)', () => {
       .send({
         _csrf: csrfToken,
         email,
-        senha: 'senha-bem-longa-1',
-        nome: 'Adonis',
-        consentimento: 'true',
+        password: 'senha-bem-longa-1',
+        name: 'Adonis',
+        consent: 'true',
       })
       .expect(302);
 
-    const refresh = pegarCookie(res, 'refresh_token')!;
+    const refresh = getCookie(res, 'refresh_token')!;
     return { cookies: [csrfCookie, refresh], csrfToken, refresh };
   }
 
@@ -71,17 +71,17 @@ describe('Aplicação (e2e)', () => {
     const mod = await Test.createTestingModule({ imports: [AppModule] })
       // Relógio fixo: as doses geradas e a tela do dia ficam determinísticas.
       .overrideProvider(Clock)
-      .useValue(new FixedClock(AGORA))
+      .useValue(new FixedClock(NOW))
       .compile();
 
     app = mod.createNestApplication<NestExpressApplication>();
-    configurarApp(app);
+    configureApp(app);
     await app.init();
     http = app.getHttpServer() as Server;
 
-    principal = await abrirSessao('principal@example.com');
-    dono = await abrirSessao('dono@example.com');
-    intruso = await abrirSessao('intruso@example.com');
+    principal = await openSession('principal@example.com');
+    owner = await openSession('dono@example.com');
+    intruder = await openSession('intruso@example.com');
   });
 
   afterAll(() => app?.close());
@@ -93,7 +93,7 @@ describe('Aplicação (e2e)', () => {
      * CSS —, e a página abre sem estilo nenhum no navegador. Nenhuma asserção
      * sobre o corpo da view percebe isso, daí estes testes olharem o documento.
      */
-    const exigirDocumentoCompleto = (html: string) => {
+    const expectFullDocument = (html: string) => {
       expect(html).toMatch(/^\s*<!DOCTYPE html>/i);
       expect(html).toContain('<html lang="pt-BR"');
       expect(html).toContain('</html>');
@@ -104,12 +104,12 @@ describe('Aplicação (e2e)', () => {
 
     it('serve /login como documento completo, com o CSS ligado', async () => {
       const res = await request(http).get('/login').expect(200);
-      exigirDocumentoCompleto(res.text);
+      expectFullDocument(res.text);
       expect(res.text).toContain('<title>Entrar · Lembrete de Medicamentos</title>');
     });
 
     it('serve /cadastro como documento completo', async () => {
-      exigirDocumentoCompleto((await request(http).get('/cadastro').expect(200)).text);
+      expectFullDocument((await request(http).get('/cadastro').expect(200)).text);
     });
 
     it('serve o dashboard como documento completo', async () => {
@@ -117,7 +117,7 @@ describe('Aplicação (e2e)', () => {
         .get('/doses/hoje')
         .set('Cookie', principal.cookies)
         .expect(200);
-      exigirDocumentoCompleto(res.text);
+      expectFullDocument(res.text);
     });
 
     it('serve o histórico como documento completo', async () => {
@@ -125,7 +125,7 @@ describe('Aplicação (e2e)', () => {
         .get('/historico')
         .set('Cookie', principal.cookies)
         .expect(200);
-      exigirDocumentoCompleto(res.text);
+      expectFullDocument(res.text);
     });
   });
 
@@ -137,14 +137,14 @@ describe('Aplicação (e2e)', () => {
     });
 
     it('emite o cookie CSRF como HttpOnly e SameSite=Lax', async () => {
-      const cookie = pegarCookie(await request(http).get('/login'), 'csrf_token')!;
+      const cookie = getCookie(await request(http).get('/login'), 'csrf_token')!;
       expect(cookie).toContain('HttpOnly');
       expect(cookie).toMatch(/SameSite=Lax/i);
     });
 
     it('destaca o consentimento LGPD na tela de cadastro', async () => {
       const res = await request(http).get('/cadastro').expect(200);
-      expect(res.text).toContain('name="consentimento"');
+      expect(res.text).toContain('name="consent"');
       expect(res.text).toContain('dados sensíveis de saúde');
     });
 
@@ -180,17 +180,17 @@ describe('Aplicação (e2e)', () => {
       await request(http)
         .post('/auth/login')
         .type('form')
-        .send({ email: 'a@example.com', senha: 'senha-longa-1' })
+        .send({ email: 'a@example.com', password: 'senha-longa-1' })
         .expect(403);
     });
 
     it('recusa POST com token que não bate com o cookie', async () => {
-      const cookie = pegarCookie(await request(http).get('/login'), 'csrf_token')!;
+      const cookie = getCookie(await request(http).get('/login'), 'csrf_token')!;
       await request(http)
         .post('/auth/login')
         .set('Cookie', cookie)
         .type('form')
-        .send({ _csrf: 'f'.repeat(64), email: 'a@example.com', senha: 'senha-longa-1' })
+        .send({ _csrf: 'f'.repeat(64), email: 'a@example.com', password: 'senha-longa-1' })
         .expect(403);
     });
 
@@ -248,11 +248,11 @@ describe('Aplicação (e2e)', () => {
         .type('form')
         .send({
           _csrf: principal.csrfToken,
-          nome: 'Losartana',
-          dosagem: '50 mg',
-          'horarios[]': ['20:00', '22:00', ''],
-          inicioEm: HOJE,
-          fimEm: '',
+          name: 'Losartana',
+          dosage: '50 mg',
+          'times[]': ['20:00', '22:00', ''],
+          startsOn: HOJE,
+          endsOn: '',
         })
         .expect(303);
 
@@ -280,24 +280,24 @@ describe('Aplicação (e2e)', () => {
 
       expect(confirmacao.body).toEqual({ id: doseId, status: 'TAKEN' });
 
-      const depois = await request(http)
+      const after = await request(http)
         .get('/doses/hoje')
         .set('Cookie', principal.cookies)
         .expect(200);
-      expect(depois.text).not.toContain(`/doses/${doseId}/taken`);
+      expect(after.text).not.toContain(`/doses/${doseId}/taken`);
 
-      const historico = await request(http)
+      const history = await request(http)
         .get('/historico')
         .set('Cookie', principal.cookies)
         .expect(200);
       // Uma tomada e uma ainda pendente: a pendente não entra no denominador.
-      expect(historico.text).toContain('100%');
+      expect(history.text).toContain('100%');
     });
 
     it('entrega ao Service Worker o resumo da dose, resolvido na própria origem', async () => {
-      const tela = await request(http).get('/doses/hoje').set('Cookie', principal.cookies);
+      const screen = await request(http).get('/doses/hoje').set('Cookie', principal.cookies);
       // A dose das 20:00 foi confirmada no teste anterior; sobra a das 22:00.
-      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(tela.text)?.[1];
+      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(screen.text)?.[1];
       expect(doseId).toBeDefined();
 
       const res = await request(http)
@@ -306,31 +306,31 @@ describe('Aplicação (e2e)', () => {
         .set('Accept', 'application/json')
         .expect(200);
 
-      expect(res.body).toMatchObject({ nome: 'Losartana', dosagem: '50 mg' });
+      expect(res.body).toMatchObject({ name: 'Losartana', dosage: '50 mg' });
     });
 
     it('não deixa um usuário registrar dose de outro', async () => {
       await request(http)
         .post('/medicamentos')
-        .set('Cookie', dono.cookies)
+        .set('Cookie', owner.cookies)
         .type('form')
         .send({
-          _csrf: dono.csrfToken,
-          nome: 'Metformina',
-          dosagem: '850 mg',
-          'horarios[]': ['21:00'],
-          inicioEm: HOJE,
-          fimEm: '',
+          _csrf: owner.csrfToken,
+          name: 'Metformina',
+          dosage: '850 mg',
+          'times[]': ['21:00'],
+          startsOn: HOJE,
+          endsOn: '',
         })
         .expect(303);
 
-      const tela = await request(http).get('/doses/hoje').set('Cookie', dono.cookies);
-      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(tela.text)![1];
+      const screen = await request(http).get('/doses/hoje').set('Cookie', owner.cookies);
+      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(screen.text)![1];
 
       await request(http)
         .post(`/doses/${doseId}/taken`)
-        .set('Cookie', intruso.cookies)
-        .set('X-CSRF-Token', intruso.csrfToken)
+        .set('Cookie', intruder.cookies)
+        .set('X-CSRF-Token', intruder.csrfToken)
         .set('Accept', 'application/json')
         .expect(404);
     });
@@ -344,10 +344,10 @@ describe('Aplicação (e2e)', () => {
         .type('form')
         .send({
           _csrf: principal.csrfToken,
-          nome: 'X',
-          dosagem: '1 mg',
-          'horarios[]': ['25:00'],
-          inicioEm: HOJE,
+          name: 'X',
+          dosage: '1 mg',
+          'times[]': ['25:00'],
+          startsOn: HOJE,
         })
         .expect(400);
     });
@@ -359,10 +359,10 @@ describe('Aplicação (e2e)', () => {
         .type('form')
         .send({
           _csrf: principal.csrfToken,
-          nome: 'X',
-          dosagem: '1 mg',
-          'horarios[]': ['08:00'],
-          inicioEm: HOJE,
+          name: 'X',
+          dosage: '1 mg',
+          'times[]': ['08:00'],
+          startsOn: HOJE,
           userId: 'tentativa-de-mass-assignment',
         })
         .expect(400);
@@ -371,24 +371,24 @@ describe('Aplicação (e2e)', () => {
 
   describe('rate limiting (ADR-001 §2.4)', () => {
     it('bloqueia tentativas repetidas de login com 429', async () => {
-      const cookie = pegarCookie(await request(http).get('/login'), 'csrf_token')!;
-      const tentar = () =>
+      const cookie = getCookie(await request(http).get('/login'), 'csrf_token')!;
+      const attemptLogin = () =>
         request(http)
           .post('/auth/login')
           .set('Cookie', cookie)
           .type('form')
           .send({
-            _csrf: valorDoCookie(cookie),
+            _csrf: cookieValue(cookie),
             email: 'forca-bruta@example.com',
-            senha: 'chute-errado-1',
+            password: 'chute-errado-1',
           });
 
-      const codigos: number[] = [];
-      for (let i = 0; i < 7; i++) codigos.push((await tentar()).status);
+      const codes: number[] = [];
+      for (let i = 0; i < 7; i++) codes.push((await attemptLogin()).status);
 
       // As cinco primeiras falham por credencial; as seguintes, por limite.
-      expect(codigos.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
-      expect(codigos.slice(5)).toEqual([429, 429]);
+      expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+      expect(codes.slice(5)).toEqual([429, 429]);
     });
 
     it('não aplica o limite estrito à navegação comum', async () => {

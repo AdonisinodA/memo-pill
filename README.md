@@ -41,7 +41,8 @@ Em desenvolvimento, `npm run dev` (API, com reload) e `npm run watch:css` (Tailw
 | `JWT_SECRET` | Segredo de assinatura dos tokens — obrigatório |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Par VAPID — obrigatórios |
 | `VAPID_SUBJECT` | `mailto:` de contato do serviço |
-| `THROTTLE_GERAL` | Limite geral por minuto (padrão 50) |
+| `THROTTLE_GENERAL` | Limite geral por minuto (padrão 50) |
+| `THROTTLE_STRICT` | Limite das rotas de credencial (padrão 5) |
 
 O `.env` nunca vai para o controle de versão.
 
@@ -62,6 +63,13 @@ A suíte cobre quatro níveis:
 - **Ponta a ponta** (`supertest`) — CSRF, sessão, rate limiting e o fluxo completo do
   cadastro do remédio até a dose confirmada.
 
+## Convenção de idioma
+
+Identificadores, nomes de arquivo, colunas do banco e campos de formulário em
+**inglês**. Texto visível ao usuário, comentários e descrições de teste em
+**pt-BR**. As rotas seguem em pt-BR (`/doses/hoje`, `/medicamentos`,
+`/historico`, `/cadastro`), acompanhando a interface.
+
 ## Estrutura
 
 ```
@@ -74,7 +82,7 @@ src/
   medications/   CRUD com soft delete e materialização de doses
   push/          inscrições e entrega Web Push
   users/         entidade de usuário
-views/           dashboard, login, medicamentos, histórico
+views/           dashboard, login, medications, medication-new, history
 public/          Service Worker, manifest, CSS e ícones
 ```
 

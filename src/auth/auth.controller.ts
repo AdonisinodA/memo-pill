@@ -6,9 +6,9 @@ import type { Request, Response } from 'express';
 import { AuthService, REFRESH_TTL_SEG } from './auth.service';
 
 /** Limite mais rigoroso para rotas de credencial (ADR-001 §2.4). */
-const LIMITE_CREDENCIAL = { default: { ttl: 60_000, limit: 5 } };
-import { LoginDto, RegistrarDto } from './dto/auth.dto';
-import { REFRESH_COOKIE, SessaoGuard } from './sessao.guard';
+const CREDENTIAL_RATE_LIMIT = { default: { ttl: 60_000, limit: 5 } };
+import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { REFRESH_COOKIE, SessionGuard } from './session.guard';
 
 @Controller()
 export class AuthController {
@@ -16,29 +16,29 @@ export class AuthController {
 
   @Get('login')
   @Render('login')
-  paginaLogin(@Req() req: Request) {
-    return { title: 'Entrar', csrfToken: req.csrfToken, modo: 'login' };
+  loginPage(@Req() req: Request) {
+    return { title: 'Entrar', csrfToken: req.csrfToken, mode: 'login' };
   }
 
   @Get('cadastro')
   @Render('login')
-  paginaCadastro(@Req() req: Request) {
-    return { title: 'Criar conta', csrfToken: req.csrfToken, modo: 'cadastro' };
+  registerPage(@Req() req: Request) {
+    return { title: 'Criar conta', csrfToken: req.csrfToken, mode: 'register' };
   }
 
   @Post('auth/login')
-  @Throttle(LIMITE_CREDENCIAL)
+  @Throttle(CREDENTIAL_RATE_LIMIT)
   async login(@Body() dto: LoginDto, @Res() res: Response): Promise<void> {
-    const sessao = await this.auth.login(dto);
-    this.gravarCookie(res, sessao.refreshToken);
+    const session = await this.auth.login(dto);
+    this.setRefreshCookie(res, session.refreshToken);
     res.redirect('/doses/hoje');
   }
 
   @Post('auth/cadastro')
-  @Throttle(LIMITE_CREDENCIAL)
-  async cadastrar(@Body() dto: RegistrarDto, @Res() res: Response): Promise<void> {
-    const sessao = await this.auth.registrar(dto);
-    this.gravarCookie(res, sessao.refreshToken);
+  @Throttle(CREDENTIAL_RATE_LIMIT)
+  async register(@Body() dto: RegisterDto, @Res() res: Response): Promise<void> {
+    const session = await this.auth.register(dto);
+    this.setRefreshCookie(res, session.refreshToken);
     res.redirect('/doses/hoje');
   }
 
@@ -50,14 +50,14 @@ export class AuthController {
 
   /** Troca o refresh do cookie por um access token de curta duração. */
   @Post('auth/refresh')
-  @UseGuards(SessaoGuard)
+  @UseGuards(SessionGuard)
   async refresh(@Req() req: Request): Promise<{ accessToken: string }> {
     const token = req.cookies[REFRESH_COOKIE] as string;
-    const { accessToken } = await this.auth.renovar(token);
+    const { accessToken } = await this.auth.refresh(token);
     return { accessToken };
   }
 
-  private gravarCookie(res: Response, refreshToken: string): void {
+  private setRefreshCookie(res: Response, refreshToken: string): void {
     res.cookie(REFRESH_COOKIE, refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

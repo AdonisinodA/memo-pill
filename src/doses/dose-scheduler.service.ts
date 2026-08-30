@@ -14,7 +14,7 @@ import { DoseStatus } from './dose-status.enum';
  * Sem esse limite inferior, o retorno de uma indisponibilidade de horas
  * dispararia de uma vez todas as notificações atrasadas.
  */
-export const JANELA_TOLERANCIA_SEG = 30 * 60;
+export const TOLERANCE_WINDOW_SEC = 30 * 60;
 
 @Injectable()
 export class DoseSchedulerService {
@@ -23,7 +23,7 @@ export class DoseSchedulerService {
   constructor(
     @InjectRepository(DoseLog) private readonly doses: Repository<DoseLog>,
     private readonly push: PushService,
-    private readonly medicamentos: MedicationsService,
+    private readonly medications: MedicationsService,
     private readonly clock: Clock,
   ) {}
 
@@ -33,28 +33,28 @@ export class DoseSchedulerService {
    */
   @Cron('* * * * *')
   async tick(): Promise<void> {
-    const perdidas = await this.marcarPerdidas();
-    const notificadas = await this.dispararPendentes();
-    if (perdidas || notificadas) {
-      this.logger.log(`${notificadas} dose(s) notificada(s), ${perdidas} perdida(s)`);
+    const missed = await this.markMissed();
+    const dispatched = await this.dispatchDue();
+    if (missed || dispatched) {
+      this.logger.log(`${dispatched} dose(s) notificada(s), ${missed} perdida(s)`);
     }
   }
 
   /** Job diário que empurra o horizonte de pré-geração adiante. */
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
-  async estenderHorizonte(): Promise<void> {
-    const criadas = await this.medicamentos.estenderHorizonte();
-    this.logger.log(`Horizonte estendido: ${criadas} dose(s) criada(s)`);
+  async extendHorizon(): Promise<void> {
+    const created = await this.medications.extendHorizon();
+    this.logger.log(`Horizonte estendido: ${created} dose(s) criada(s)`);
   }
 
   /**
    * Doses cujo horário passou da tolerância sem resposta viram MISSED.
    * Permanecem no histórico de adesão, mas não geram alerta fora de hora.
    */
-  async marcarPerdidas(): Promise<number> {
-    const limite = this.clock.nowSeconds() - JANELA_TOLERANCIA_SEG;
+  async markMissed(): Promise<number> {
+    const threshold = this.clock.nowSeconds() - TOLERANCE_WINDOW_SEC;
     const { affected } = await this.doses.update(
-      { status: DoseStatus.PENDING, scheduledFor: LessThan(limite) },
+      { status: DoseStatus.PENDING, scheduledFor: LessThan(threshold) },
       { status: DoseStatus.MISSED },
     );
     return affected ?? 0;
@@ -65,28 +65,28 @@ export class DoseSchedulerService {
    * O filtro usa a coluna de igualdade (`status`) e depois a de faixa
    * (`scheduled_for`), na mesma ordem do índice composto.
    */
-  async dispararPendentes(): Promise<number> {
-    const agora = this.clock.nowSeconds();
+  async dispatchDue(): Promise<number> {
+    const now = this.clock.nowSeconds();
 
-    const candidatas = await this.doses
+    const candidates = await this.doses
       .createQueryBuilder('d')
       .innerJoinAndSelect('d.medication', 'm')
-      .where('d.status = :pendente', { pendente: DoseStatus.PENDING })
+      .where('d.status = :pending', { pending: DoseStatus.PENDING })
       .andWhere('d.notified_at IS NULL')
-      .andWhere('d.scheduled_for <= :agora', { agora })
-      .andWhere('d.scheduled_for >= :limite', {
-        limite: agora - JANELA_TOLERANCIA_SEG,
+      .andWhere('d.scheduled_for <= :now', { now })
+      .andWhere('d.scheduled_for >= :threshold', {
+        threshold: now - TOLERANCE_WINDOW_SEC,
       })
       .orderBy('d.scheduled_for', 'ASC')
       .getMany();
 
-    let notificadas = 0;
-    for (const dose of candidatas) {
-      if (!(await this.reivindicar(dose.id, agora))) continue;
-      await this.push.notificarDose(dose.medication!.userId, dose.id);
-      notificadas++;
+    let dispatched = 0;
+    for (const dose of candidates) {
+      if (!(await this.claim(dose.id, now))) continue;
+      await this.push.notifyDose(dose.medication!.userId, dose.id);
+      dispatched++;
     }
-    return notificadas;
+    return dispatched;
   }
 
   /**
@@ -94,11 +94,11 @@ export class DoseSchedulerService {
    * dispara a notificação. Protege contra envio duplicado caso mais de uma
    * instância do agendador venha a existir (ADR-001 §2.3).
    */
-  private async reivindicar(doseId: string, agora: number): Promise<boolean> {
+  private async claim(doseId: string, now: number): Promise<boolean> {
     const { affected } = await this.doses
       .createQueryBuilder()
       .update(DoseLog)
-      .set({ notifiedAt: agora })
+      .set({ notifiedAt: now })
       .where('id = :doseId', { doseId })
       .andWhere('notified_at IS NULL')
       .execute();

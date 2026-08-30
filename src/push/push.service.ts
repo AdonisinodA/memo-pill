@@ -8,14 +8,14 @@ export const SLEEP = Symbol('SLEEP');
 export type Sleep = (ms: number) => Promise<void>;
 
 /** Status que indicam inscrição morta — devem ser removidas (ADR-001 §2.1). */
-const STATUS_INSCRICAO_MORTA = [404, 410];
-const MAX_TENTATIVAS = 3;
+const DEAD_SUBSCRIPTION_STATUSES = [404, 410];
+const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 500;
 
-export interface ResultadoEnvio {
-  entregues: number;
-  removidas: number;
-  falhas: number;
+export interface DeliveryResult {
+  delivered: number;
+  removed: number;
+  failed: number;
 }
 
 @Injectable()
@@ -24,17 +24,17 @@ export class PushService {
 
   constructor(
     @InjectRepository(PushSubscription)
-    private readonly inscricoes: Repository<PushSubscription>,
+    private readonly subscriptions: Repository<PushSubscription>,
     private readonly transport: WebPushTransport,
     @Inject(SLEEP) private readonly sleep: Sleep,
   ) {}
 
-  registrar(
+  subscribe(
     userId: string,
-    dados: { endpoint: string; p256dh: string; auth: string },
+    data: { endpoint: string; p256dh: string; auth: string },
   ): Promise<PushSubscription> {
-    return this.inscricoes.save(
-      this.inscricoes.create({ userId, ...dados }),
+    return this.subscriptions.save(
+      this.subscriptions.create({ userId, ...data }),
     );
   }
 
@@ -45,51 +45,51 @@ export class PushService {
    * resolvido pelo Service Worker via API, para não trafegar dado de saúde pelo
    * push service (ADR-001 §2.4).
    */
-  async notificarDose(userId: string, doseId: string): Promise<ResultadoEnvio> {
-    const inscricoes = await this.inscricoes.findBy({ userId });
+  async notifyDose(userId: string, doseId: string): Promise<DeliveryResult> {
+    const subscriptions = await this.subscriptions.findBy({ userId });
     const payload = JSON.stringify({ doseId });
-    const resultado: ResultadoEnvio = { entregues: 0, removidas: 0, falhas: 0 };
+    const result: DeliveryResult = { delivered: 0, removed: 0, failed: 0 };
 
-    for (const inscricao of inscricoes) {
-      const status = await this.entregarComRetentativa(inscricao, payload);
-      if (status === 'entregue') resultado.entregues++;
-      else if (status === 'removida') resultado.removidas++;
-      else resultado.falhas++;
+    for (const subscription of subscriptions) {
+      const status = await this.deliverWithRetry(subscription, payload);
+      if (status === 'delivered') result.delivered++;
+      else if (status === 'removed') result.removed++;
+      else result.failed++;
     }
-    return resultado;
+    return result;
   }
 
-  private async entregarComRetentativa(
-    inscricao: PushSubscription,
+  private async deliverWithRetry(
+    subscription: PushSubscription,
     payload: string,
-  ): Promise<'entregue' | 'removida' | 'falha'> {
-    for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+  ): Promise<'delivered' | 'removed' | 'failed'> {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        await this.transport.enviar(inscricao, payload);
-        return 'entregue';
-      } catch (erro) {
+        await this.transport.send(subscription, payload);
+        return 'delivered';
+      } catch (error) {
         const status =
-          erro instanceof PushDeliveryError ? erro.statusCode : 0;
+          error instanceof PushDeliveryError ? error.statusCode : 0;
 
         // Inscrição morta: não adianta insistir, ela nunca mais vai responder.
-        if (STATUS_INSCRICAO_MORTA.includes(status)) {
-          await this.inscricoes.delete({ id: inscricao.id });
+        if (DEAD_SUBSCRIPTION_STATUSES.includes(status)) {
+          await this.subscriptions.delete({ id: subscription.id });
           this.logger.log(
-            `Inscrição ${inscricao.id} removida após HTTP ${status}`,
+            `Inscrição ${subscription.id} removida após HTTP ${status}`,
           );
-          return 'removida';
+          return 'removed';
         }
 
-        const ultimaTentativa = tentativa === MAX_TENTATIVAS;
-        if (ultimaTentativa) {
+        const lastAttempt = attempt === MAX_ATTEMPTS;
+        if (lastAttempt) {
           this.logger.warn(
-            `Falha ao entregar em ${inscricao.id} após ${MAX_TENTATIVAS} tentativas (HTTP ${status})`,
+            `Falha ao entregar em ${subscription.id} após ${MAX_ATTEMPTS} tentativas (HTTP ${status})`,
           );
-          return 'falha';
+          return 'failed';
         }
-        await this.sleep(BASE_BACKOFF_MS * 2 ** (tentativa - 1));
+        await this.sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1));
       }
     }
-    return 'falha';
+    return 'failed';
   }
 }

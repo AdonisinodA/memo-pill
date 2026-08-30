@@ -7,17 +7,17 @@ describe('CsrfMiddleware', () => {
   const csrf = new CsrfService();
   const middleware = new CsrfMiddleware(csrf);
 
-  const requisicao = (over: Partial<Request> = {}): Request =>
+  const makeRequest = (over: Partial<Request> = {}): Request =>
     ({ method: 'GET', cookies: {}, headers: {}, body: {}, ...over }) as Request;
 
-  const resposta = () => {
+  const makeResponse = () => {
     const cookie = jest.fn();
     return { res: { cookie } as unknown as Response, cookie };
   };
 
   it('emite cookie CSRF quando ainda não existe', () => {
-    const req = requisicao();
-    const { res, cookie } = resposta();
+    const req = makeRequest();
+    const { res, cookie } = makeResponse();
     middleware.use(req, res, jest.fn());
 
     expect(req.csrfToken).toMatch(/^[0-9a-f]{64}$/);
@@ -29,9 +29,9 @@ describe('CsrfMiddleware', () => {
   });
 
   it('reaproveita o cookie existente sem reemitir', () => {
-    const token = csrf.gerar();
-    const req = requisicao({ cookies: { [CSRF_COOKIE]: token } });
-    const { res, cookie } = resposta();
+    const token = csrf.generate();
+    const req = makeRequest({ cookies: { [CSRF_COOKIE]: token } });
+    const { res, cookie } = makeResponse();
     middleware.use(req, res, jest.fn());
 
     expect(req.csrfToken).toBe(token);
@@ -40,53 +40,53 @@ describe('CsrfMiddleware', () => {
 
   it.each(['GET', 'HEAD', 'OPTIONS'])('não valida token em %s', (method) => {
     const next = jest.fn();
-    middleware.use(requisicao({ method }), resposta().res, next);
+    middleware.use(makeRequest({ method }), makeResponse().res, next);
     expect(next).toHaveBeenCalled();
   });
 
   it('aceita POST com token no corpo', () => {
-    const token = csrf.gerar();
+    const token = csrf.generate();
     const next = jest.fn();
     middleware.use(
-      requisicao({ method: 'POST', cookies: { [CSRF_COOKIE]: token }, body: { _csrf: token } }),
-      resposta().res,
+      makeRequest({ method: 'POST', cookies: { [CSRF_COOKIE]: token }, body: { _csrf: token } }),
+      makeResponse().res,
       next,
     );
     expect(next).toHaveBeenCalled();
   });
 
   it('aceita POST com token no cabeçalho, como faz o Service Worker', () => {
-    const token = csrf.gerar();
+    const token = csrf.generate();
     const next = jest.fn();
     middleware.use(
-      requisicao({
+      makeRequest({
         method: 'POST',
         cookies: { [CSRF_COOKIE]: token },
         headers: { 'x-csrf-token': token },
       }),
-      resposta().res,
+      makeResponse().res,
       next,
     );
     expect(next).toHaveBeenCalled();
   });
 
   it('remove o _csrf do corpo para não vazar ao DTO', () => {
-    const token = csrf.gerar();
-    const body: Record<string, unknown> = { _csrf: token, nome: 'Losartana' };
+    const token = csrf.generate();
+    const body: Record<string, unknown> = { _csrf: token, name: 'Losartana' };
     middleware.use(
-      requisicao({ method: 'POST', cookies: { [CSRF_COOKIE]: token }, body }),
-      resposta().res,
+      makeRequest({ method: 'POST', cookies: { [CSRF_COOKIE]: token }, body }),
+      makeResponse().res,
       jest.fn(),
     );
-    expect(body).toEqual({ nome: 'Losartana' });
+    expect(body).toEqual({ name: 'Losartana' });
   });
 
   it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('recusa %s sem token', (method) => {
     const next = jest.fn();
     expect(() =>
       middleware.use(
-        requisicao({ method, cookies: { [CSRF_COOKIE]: csrf.gerar() } }),
-        resposta().res,
+        makeRequest({ method, cookies: { [CSRF_COOKIE]: csrf.generate() } }),
+        makeResponse().res,
         next,
       ),
     ).toThrow(ForbiddenException);
@@ -96,12 +96,12 @@ describe('CsrfMiddleware', () => {
   it('recusa POST com token que não corresponde ao cookie', () => {
     expect(() =>
       middleware.use(
-        requisicao({
+        makeRequest({
           method: 'POST',
-          cookies: { [CSRF_COOKIE]: csrf.gerar() },
-          body: { _csrf: csrf.gerar() },
+          cookies: { [CSRF_COOKIE]: csrf.generate() },
+          body: { _csrf: csrf.generate() },
         }),
-        resposta().res,
+        makeResponse().res,
         jest.fn(),
       ),
     ).toThrow(ForbiddenException);

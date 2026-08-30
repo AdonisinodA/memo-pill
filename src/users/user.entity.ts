@@ -13,7 +13,7 @@ export class User {
   passwordHash!: string;
 
   @Column()
-  nome!: string;
+  name!: string;
 
   /**
    * Fuso IANA do usuário (ADR-001 §2.2). Usado apenas para converter o horário

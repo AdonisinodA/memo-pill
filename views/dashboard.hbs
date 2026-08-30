@@ -57,9 +57,9 @@
   <main class="md:ml-64 px-4 pt-6 pb-32 md:px-8 md:pt-8 md:pb-10">
 
     <header class="mb-6 md:mb-8">
-      <p class="text-sm font-medium capitalize text-slate-500">{{dataAtual}}</p>
+      <p class="text-sm font-medium capitalize text-slate-500">{{currentDate}}</p>
       <h1 class="mt-1 text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">
-        Olá, {{usuario.nome}}
+        Olá, {{user.name}}
       </h1>
     </header>
 
@@ -67,17 +67,17 @@
       <h2 id="doses-hoje" class="sr-only">Doses de hoje</h2>
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {{#each medicamentos}}
+        {{#each doses}}
 
           {{#if (eq status "PENDING")}}
             {{!-- ---------- Card pendente ---------- --}}
             <article class="flex flex-col rounded-2xl border-l-4 border-teal-500 bg-white p-5 shadow-sm">
               <div class="flex items-baseline justify-between gap-2">
-                <time datetime="{{horarioISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{horario}}</time>
+                <time datetime="{{timeISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{time}}</time>
                 <span class="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">Pendente</span>
               </div>
-              <h3 class="mt-3 text-base font-semibold text-slate-800">{{nome}}</h3>
-              <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
+              <h3 class="mt-3 text-base font-semibold text-slate-800">{{name}}</h3>
+              <p class="mt-0.5 text-sm text-slate-500">{{dosage}}</p>
 
               <form method="post" action="/doses/{{id}}/taken" class="mt-5">
                 <input type="hidden" name="_csrf" value="{{@root.csrfToken}}">
@@ -103,7 +103,7 @@
             {{!-- ---------- Card tomado ---------- --}}
             <article class="flex flex-col rounded-2xl border-l-4 border-slate-300 bg-slate-100 p-5 opacity-60 shadow-sm">
               <div class="flex items-baseline justify-between gap-2">
-                <time datetime="{{horarioISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{horario}}</time>
+                <time datetime="{{timeISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{time}}</time>
                 <span class="flex items-center gap-1.5 text-xs font-medium text-teal-600">
                   <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="m5 12 5 5L20 7" />
@@ -111,30 +111,30 @@
                   Tomado
                 </span>
               </div>
-              <h3 class="mt-3 text-base font-semibold text-slate-800">{{nome}}</h3>
-              <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
+              <h3 class="mt-3 text-base font-semibold text-slate-800">{{name}}</h3>
+              <p class="mt-0.5 text-sm text-slate-500">{{dosage}}</p>
             </article>
 
           {{else if (eq status "MISSED")}}
             {{!-- ---------- Card não registrado (janela de tolerância expirada) ---------- --}}
             <article class="flex flex-col rounded-2xl border-l-4 border-amber-400 bg-white p-5 shadow-sm">
               <div class="flex items-baseline justify-between gap-2">
-                <time datetime="{{horarioISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{horario}}</time>
+                <time datetime="{{timeISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{time}}</time>
                 <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Não registrado</span>
               </div>
-              <h3 class="mt-3 text-base font-semibold text-slate-800">{{nome}}</h3>
-              <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
+              <h3 class="mt-3 text-base font-semibold text-slate-800">{{name}}</h3>
+              <p class="mt-0.5 text-sm text-slate-500">{{dosage}}</p>
             </article>
 
           {{else}}
             {{!-- ---------- Card pulado ---------- --}}
             <article class="flex flex-col rounded-2xl border-l-4 border-slate-300 bg-slate-100 p-5 opacity-60 shadow-sm">
               <div class="flex items-baseline justify-between gap-2">
-                <time datetime="{{horarioISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{horario}}</time>
+                <time datetime="{{timeISO}}" class="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{{time}}</time>
                 <span class="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">Pulado</span>
               </div>
-              <h3 class="mt-3 text-base font-semibold text-slate-800">{{nome}}</h3>
-              <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
+              <h3 class="mt-3 text-base font-semibold text-slate-800">{{name}}</h3>
+              <p class="mt-0.5 text-sm text-slate-500">{{dosage}}</p>
             </article>
           {{/if}}
 

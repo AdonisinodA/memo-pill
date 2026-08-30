@@ -8,9 +8,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { CommonModule } from './common/common.module';
 import { CsrfMiddleware } from './common/csrf/csrf.middleware';
-import { NaoAutenticadoFilter } from './common/nao-autenticado.filter';
+import { UnauthenticatedFilter } from './common/unauthenticated.filter';
 import { configuration } from './config/configuration';
-import { aplicarPragmas } from './database/sqlite-options';
+import { applyPragmas } from './database/sqlite-options';
 import { DoseLog } from './doses/dose-log.entity';
 import { DosesModule } from './doses/doses.module';
 import { Medication } from './medications/medication.entity';
@@ -24,7 +24,7 @@ import { UsersModule } from './users/users.module';
  * Rate limiting por janela fixa (ADR-001 §2.4): 50 requisições por 60s no geral.
  * Rotas sensíveis usam o limitador `estrito` via @Throttle.
  */
-export const JANELA_THROTTLE_MS = 60_000;
+export const THROTTLE_WINDOW_MS = 60_000;
 
 @Module({
   imports: [
@@ -37,8 +37,8 @@ export const JANELA_THROTTLE_MS = 60_000;
       useFactory: (config: ConfigService) => [
         {
           name: 'default',
-          ttl: JANELA_THROTTLE_MS,
-          limit: config.getOrThrow<number>('throttle.geral'),
+          ttl: THROTTLE_WINDOW_MS,
+          limit: config.getOrThrow<number>('throttle.general'),
         },
       ],
     }),
@@ -53,7 +53,7 @@ export const JANELA_THROTTLE_MS = 60_000;
         migrations: [join(__dirname, 'database', 'migrations', '*.js')],
         migrationsRun: process.env.NODE_ENV === 'production',
         synchronize: process.env.NODE_ENV !== 'production',
-        prepareDatabase: aplicarPragmas,
+        prepareDatabase: applyPragmas,
       }),
     }),
     CommonModule,
@@ -65,7 +65,7 @@ export const JANELA_THROTTLE_MS = 60_000;
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_FILTER, useClass: NaoAutenticadoFilter },
+    { provide: APP_FILTER, useClass: UnauthenticatedFilter },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({

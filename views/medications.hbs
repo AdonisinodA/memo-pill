@@ -6,12 +6,12 @@
     </div>
 
     <ul class="space-y-3">
-      {{#each medicamentos}}
+      {{#each medications}}
         <li class="flex items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm">
           <div class="min-w-0">
-            <h2 class="truncate text-base font-semibold text-slate-800">{{nome}}</h2>
-            <p class="mt-0.5 text-sm text-slate-500">{{dosagem}}</p>
-            <p class="mt-1 text-xs tabular-nums text-slate-400">{{#each horarios}}{{this}}{{#unless @last}} · {{/unless}}{{/each}}</p>
+            <h2 class="truncate text-base font-semibold text-slate-800">{{name}}</h2>
+            <p class="mt-0.5 text-sm text-slate-500">{{dosage}}</p>
+            <p class="mt-1 text-xs tabular-nums text-slate-400">{{#each times}}{{this}}{{#unless @last}} · {{/unless}}{{/each}}</p>
           </div>
           <form method="post" action="/medicamentos/{{id}}/remover">
             <input type="hidden" name="_csrf" value="{{@root.csrfToken}}">

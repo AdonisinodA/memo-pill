@@ -4,7 +4,7 @@ import { DoseLog } from '../doses/dose-log.entity';
 import { Medication } from '../medications/medication.entity';
 import { PushSubscription } from '../push/push-subscription.entity';
 import { User } from '../users/user.entity';
-import { aplicarPragmas } from './sqlite-options';
+import { applyPragmas } from './sqlite-options';
 
 /**
  * DataSource usado apenas pela CLI do TypeORM (gerar e rodar migrations).
@@ -15,5 +15,5 @@ export default new DataSource({
   database: process.env.DATABASE_PATH ?? 'data/app.db',
   entities: [User, Medication, DoseLog, PushSubscription],
   migrations: ['src/database/migrations/*.ts'],
-  prepareDatabase: aplicarPragmas,
+  prepareDatabase: applyPragmas,
 });

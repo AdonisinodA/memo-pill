@@ -13,19 +13,19 @@ const CSRF = 'csrf-token-de-teste';
 
 type Dose = {
   id: string;
-  nome: string;
-  dosagem: string;
-  horario: string;
-  horarioISO: string;
+  name: string;
+  dosage: string;
+  time: string;
+  timeISO: string;
   status: 'PENDING' | 'TAKEN' | 'SKIPPED' | 'MISSED' | 'CANCELED';
 };
 
 const dose = (over: Partial<Dose> = {}): Dose => ({
   id: 'dose-1',
-  nome: 'Losartana',
-  dosagem: '50 mg — 1 comprimido',
-  horario: '08:00',
-  horarioISO: '2026-08-30T11:00:00Z',
+  name: 'Losartana',
+  dosage: '50 mg — 1 comprimido',
+  time: '08:00',
+  timeISO: '2026-08-30T11:00:00Z',
   status: 'PENDING',
   ...over,
 });
@@ -34,10 +34,10 @@ function render(model: Record<string, unknown> = {}) {
   const hbs = Handlebars.create();
   registerHbsHelpers(hbs);
   const html = hbs.compile(TEMPLATE)({
-    usuario: { nome: 'Adonis' },
-    dataAtual: 'sábado, 30 de agosto',
+    user: { name: 'Adonis' },
+    currentDate: 'sábado, 30 de agosto',
     csrfToken: CSRF,
-    medicamentos: [dose()],
+    doses: [dose()],
     ...model,
   });
   return cheerio.load(html);
@@ -52,14 +52,14 @@ describe('dashboard.hbs', () => {
     });
 
     it('escapa HTML no nome do usuário (ADR-001 §2.4 — mitigação de XSS)', () => {
-      const $ = render({ usuario: { nome: '<img src=x onerror=alert(1)>' } });
+      const $ = render({ user: { name: '<img src=x onerror=alert(1)>' } });
       expect($('h1 img')).toHaveLength(0);
       expect($('h1').html()).toContain('&lt;img');
     });
 
     it('escapa HTML no nome do medicamento', () => {
       const $ = render({
-        medicamentos: [dose({ nome: '<script>alert(1)</script>' })],
+        doses: [dose({ name: '<script>alert(1)</script>' })],
       });
       expect($('script')).toHaveLength(0);
       expect($('article h3').html()).toContain('&lt;script&gt;');
@@ -157,7 +157,7 @@ describe('dashboard.hbs', () => {
   });
 
   describe('card TAKEN', () => {
-    const $ = () => render({ medicamentos: [dose({ status: 'TAKEN' })] });
+    const $ = () => render({ doses: [dose({ status: 'TAKEN' })] });
 
     it('usa fundo acinzentado e opacidade reduzida', () => {
       const cls = $()('article').attr('class') ?? '';
@@ -171,29 +171,29 @@ describe('dashboard.hbs', () => {
     });
 
     it('substitui a ação por um ícone de check em teal-600', () => {
-      const marca = $()('article svg').parent();
-      expect(marca.attr('class')).toContain('text-teal-600');
-      expect(marca.text()).toContain('Tomado');
+      const badge = $()('article svg').parent();
+      expect(badge.attr('class')).toContain('text-teal-600');
+      expect(badge.text()).toContain('Tomado');
     });
   });
 
   describe('demais status do enum (ADR-001 §2.2)', () => {
     it('renderiza MISSED como não registrado, sem ação', () => {
-      const $ = render({ medicamentos: [dose({ status: 'MISSED' })] });
+      const $ = render({ doses: [dose({ status: 'MISSED' })] });
       expect($('article').attr('class')).toContain('border-amber-400');
       expect($('article').text()).toContain('Não registrado');
       expect($('article button')).toHaveLength(0);
     });
 
     it('renderiza SKIPPED como pulado, sem ação', () => {
-      const $ = render({ medicamentos: [dose({ status: 'SKIPPED' })] });
+      const $ = render({ doses: [dose({ status: 'SKIPPED' })] });
       expect($('article').text()).toContain('Pulado');
       expect($('article button')).toHaveLength(0);
     });
 
     it('renderiza um card por dose quando há vários status na mesma lista', () => {
       const $ = render({
-        medicamentos: [
+        doses: [
           dose({ id: 'a', status: 'PENDING' }),
           dose({ id: 'b', status: 'TAKEN' }),
           dose({ id: 'c', status: 'MISSED' }),
@@ -218,7 +218,7 @@ describe('dashboard.hbs', () => {
 
     it('mantém o token acessível de dentro do #each via @root', () => {
       const $ = render({
-        medicamentos: [dose({ id: 'x' }), dose({ id: 'y' })],
+        doses: [dose({ id: 'x' }), dose({ id: 'y' })],
       });
       expect($('input[name="_csrf"]')).toHaveLength(4);
     });
@@ -226,7 +226,7 @@ describe('dashboard.hbs', () => {
 
   describe('estado vazio', () => {
     it('convida ao cadastro quando não há doses no dia', () => {
-      const $ = render({ medicamentos: [] });
+      const $ = render({ doses: [] });
       expect($('article')).toHaveLength(0);
       expect($('div.grid').text()).toContain('Nenhuma dose para hoje');
       expect($('a[href="/medicamentos/novo"]').length).toBeGreaterThan(0);

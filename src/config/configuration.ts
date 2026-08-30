@@ -2,7 +2,7 @@ export interface AppConfig {
   port: number;
   databasePath: string;
   jwt: { secret: string };
-  throttle: { geral: number; estrito: number };
+  throttle: { general: number; strict: number };
   vapid: { publicKey: string; privateKey: string; subject: string };
 }
 
@@ -15,8 +15,8 @@ export const configuration = (): AppConfig => ({
   databasePath: process.env.DATABASE_PATH ?? 'data/app.db',
   jwt: { secret: required('JWT_SECRET') },
   throttle: {
-    geral: Number(process.env.THROTTLE_GERAL ?? 50),
-    estrito: Number(process.env.THROTTLE_ESTRITO ?? 5),
+    general: Number(process.env.THROTTLE_GENERAL ?? 50),
+    strict: Number(process.env.THROTTLE_STRICT ?? 5),
   },
   vapid: {
     publicKey: required('VAPID_PUBLIC_KEY'),

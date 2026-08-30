@@ -8,15 +8,15 @@ import { IsBoolean, IsEmail, IsString, MaxLength, MinLength, Equals, IsOptional 
 const comoBooleano = ({ value }: { value: unknown }) =>
   value === true || value === 'true' || value === 'on' ? true : value;
 
-export class RegistrarDto {
+export class RegisterDto {
   @IsEmail() @MaxLength(180)
   email!: string;
 
   @IsString() @MinLength(8) @MaxLength(72) // bcrypt trunca acima de 72 bytes
-  senha!: string;
+  password!: string;
 
   @IsString() @MinLength(2) @MaxLength(120)
-  nome!: string;
+  name!: string;
 
   @IsOptional() @IsString() @MaxLength(64)
   timezone?: string;
@@ -27,7 +27,7 @@ export class RegistrarDto {
    */
   @Transform(comoBooleano)
   @IsBoolean() @Equals(true, { message: 'o consentimento é obrigatório' })
-  consentimento!: boolean;
+  consent!: boolean;
 }
 
 export class LoginDto {
@@ -35,5 +35,5 @@ export class LoginDto {
   email!: string;
 
   @IsString() @MaxLength(72)
-  senha!: string;
+  password!: string;
 }
