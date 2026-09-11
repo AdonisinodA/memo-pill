@@ -212,11 +212,18 @@ describe('dashboard.hbs', () => {
       });
     });
 
+    // Dentro do #each o contexto é a dose, e `csrfToken` está na raiz do
+    // modelo: sem o @root os formulários dos cards sairiam com o campo vazio.
     it('mantém o token acessível de dentro do #each via @root', () => {
       const $ = render({
         doses: [dose({ id: 'x' }), dose({ id: 'y' })],
       });
-      expect($('input[name="_csrf"]')).toHaveLength(4);
+      // Duas doses × (tomar + pular). Os formulários de saída ficam na nav,
+      // fora do #each, e por isso não entram nesta contagem.
+      expect($('article input[name="_csrf"]')).toHaveLength(4);
+      $('article input[name="_csrf"]').each((_, el) => {
+        expect($(el).attr('value')).toBe(CSRF);
+      });
     });
   });
 

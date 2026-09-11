@@ -14,7 +14,11 @@ process.env.VAPID_PRIVATE_KEY = '5SLE1FySCdUVw7Empa3xzElVI3ODUJotQYa73KuQTCc';
 // Limite geral folgado; as rotas de credencial mantêm o limite real de 5/min.
 process.env.THROTTLE_GENERAL = '1000';
 
+import { getDataSourceToken } from '@nestjs/typeorm';
+import type { DataSource, Repository } from 'typeorm';
 import { AppModule } from '../src/app.module';
+import { PushSubscription } from '../src/push/push-subscription.entity';
+import { User } from '../src/users/user.entity';
 import { configureApp } from '../src/configure-app';
 import { Clock, FixedClock } from '../src/common/time/clock';
 import { sec } from './helpers/fixtures';
@@ -44,6 +48,10 @@ describe('Aplicação (e2e)', () => {
   let principal: Session;
   let owner: Session;
   let intruder: Session;
+  // A remoção da inscrição push e o corte de sessões não têm rota que os
+  // exponha — e não deveriam ter. A verificação é no banco.
+  let subscriptions: Repository<PushSubscription>;
+  let users: Repository<User>;
 
   async function openSession(email: string): Promise<Session> {
     const inicial = await request(http).get('/cadastro');
@@ -78,6 +86,9 @@ describe('Aplicação (e2e)', () => {
     configureApp(app);
     await app.init();
     http = app.getHttpServer() as Server;
+    const ds = app.get<DataSource>(getDataSourceToken());
+    subscriptions = ds.getRepository(PushSubscription);
+    users = ds.getRepository(User);
 
     principal = await openSession('principal@example.com');
     owner = await openSession('dono@example.com');
@@ -596,6 +607,199 @@ describe('Aplicação (e2e)', () => {
       expect(dashboard.text).toContain('src="/js/push.js"');
       expect(dashboard.text).toContain('id="push-banner"');
       expect(dashboard.text).toContain('id="push-enable"');
+    });
+  });
+
+  /**
+   * Sair precisa desfazer tudo que sustenta a sessão. Apagar o cookie é a parte
+   * fácil e insuficiente: o refresh token é um JWT de 30 dias, e uma cópia dele
+   * continuaria abrindo a conta se o servidor não o revogasse.
+   *
+   * As sessões daqui são CONSUMIDAS — depois do logout não servem mais. Por
+   * isso os testes reaproveitam `owner` e `intruder`, que já cumpriram o papel
+   * deles nos blocos acima: `/auth/cadastro` aceita 5 por minuto, e a suíte
+   * inteira roda dentro de uma janela só.
+   */
+  describe('sair da conta', () => {
+    const cookieApagado = (res: request.Response, nome: string) => {
+      const cookie = getCookie(res, nome);
+      expect(cookie).toBeDefined();
+      expect(cookieValue(cookie!)).toBe('');
+    };
+
+    const sair = (sessao: Session, rota = '/auth/logout', corpo = {}) =>
+      request(http)
+        .post(rota)
+        .set('Cookie', sessao.cookies)
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: sessao.csrfToken, ...corpo });
+
+    it('apaga os cookies e invalida o token no servidor', async () => {
+      const res = await sair(owner).expect(303).expect('Location', '/login');
+
+      cookieApagado(res, 'refresh_token');
+      // O CSRF é vinculado à sessão: mantê-lo passaria o token de quem saiu
+      // para a próxima pessoa a usar o aparelho.
+      cookieApagado(res, 'csrf_token');
+
+      // O atacante tem a cópia do cookie; o navegador dele nunca foi limpo.
+      await request(http)
+        .get('/doses/hoje')
+        .set('Cookie', owner.cookies)
+        .set('Accept', 'text/html')
+        .expect(302)
+        .expect('Location', '/login');
+
+      await request(http)
+        .get('/csrf')
+        .set('Cookie', owner.cookies)
+        .set('Accept', 'application/json')
+        .expect(401);
+    });
+
+    it('desliga as notificações do aparelho que saiu', async () => {
+      const endpoint = 'https://fcm.example/aparelho-que-sai';
+      await request(http)
+        .post('/push/inscrever')
+        .set('Cookie', intruder.cookies)
+        .set('X-CSRF-Token', intruder.csrfToken)
+        .set('Accept', 'application/json')
+        .send({ endpoint, p256dh: 'chave', auth: 'auth' })
+        .expect(201);
+
+      await sair(intruder, '/auth/logout', { pushEndpoint: endpoint }).expect(303);
+
+      // A notificação carrega nome de medicamento e horário: deixá-la ativa
+      // entregaria dado de saúde a quem usar o aparelho depois.
+      expect(await subscriptions.countBy({ endpoint })).toBe(0);
+    });
+
+    // Sair é um botão de segurança: falhar nele é o pior desfecho possível.
+    it('leva ao login mesmo sem sessão válida', async () => {
+      const inicial = await request(http).get('/login');
+      const csrfCookie = getCookie(inicial, 'csrf_token')!;
+
+      await request(http)
+        .post('/auth/logout')
+        .set('Cookie', [csrfCookie])
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: cookieValue(csrfCookie) })
+        .expect(303)
+        .expect('Location', '/login');
+    });
+
+    // Sem o token, um site de terceiro derrubaria a sessão do usuário à revelia.
+    it('recusa saída forçada sem token CSRF', async () => {
+      await request(http)
+        .post('/auth/logout')
+        .set('Cookie', principal.cookies)
+        .type('form')
+        .send({})
+        .expect(403);
+
+      await request(http).get('/doses/hoje').set('Cookie', principal.cookies).expect(200);
+    });
+  });
+
+  describe('sair de todos os aparelhos', () => {
+    it('encerra a sessão e apaga as inscrições push da conta', async () => {
+      const sessao = await openSession('todos-aparelhos@example.com');
+      await request(http)
+        .post('/push/inscrever')
+        .set('Cookie', sessao.cookies)
+        .set('X-CSRF-Token', sessao.csrfToken)
+        .set('Accept', 'application/json')
+        .send({ endpoint: 'https://fcm.example/um', p256dh: 'k', auth: 'a' })
+        .expect(201);
+
+      const { id: userId } = await users.findOneByOrFail({
+        email: 'todos-aparelhos@example.com',
+      });
+
+      await request(http)
+        .post('/auth/sair-de-todos')
+        .set('Cookie', sessao.cookies)
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: sessao.csrfToken })
+        .expect(303)
+        .expect('Location', '/login');
+
+      await request(http)
+        .get('/doses/hoje')
+        .set('Cookie', sessao.cookies)
+        .set('Accept', 'text/html')
+        .expect(302)
+        .expect('Location', '/login');
+
+      expect(await subscriptions.countBy({ userId })).toBe(0);
+      // A geração avançada é o que derruba os aparelhos que não estão aqui.
+      expect((await users.findOneByOrFail({ id: userId })).sessionsVersion).toBe(1);
+    });
+
+    it('exige sessão válida — não há como saber quais sessões derrubar', async () => {
+      const inicial = await request(http).get('/login');
+      const csrfCookie = getCookie(inicial, 'csrf_token')!;
+
+      await request(http)
+        .post('/auth/sair-de-todos')
+        .set('Cookie', [csrfCookie])
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: cookieValue(csrfCookie) })
+        .expect(302)
+        .expect('Location', '/login');
+    });
+  });
+
+  /**
+   * Sem `no-store`, o botão Voltar depois de sair reexibe o dashboard a partir
+   * do cache — com nome de medicamento e horários na tela, sem sessão nenhuma.
+   */
+  describe('cache das páginas autenticadas', () => {
+    it.each(['/doses/hoje', '/historico', '/medicamentos', '/login'])(
+      'manda o navegador não guardar %s',
+      async (rota) => {
+        const res = await request(http)
+          .get(rota)
+          .set('Cookie', principal.cookies)
+          .expect(200);
+        expect(res.headers['cache-control']).toContain('no-store');
+      },
+    );
+
+    it('mantém os assets estáticos cacheáveis', async () => {
+      const res = await request(http).get('/css/app.css').expect(200);
+      expect(res.headers['cache-control'] ?? '').not.toContain('no-store');
+    });
+  });
+
+  describe('botão de sair na interface', () => {
+    it.each(['/doses/hoje', '/historico', '/medicamentos'])(
+      'aparece em %s, na sidebar e no menu do mobile',
+      async (rota) => {
+        const res = await request(http)
+          .get(rota)
+          .set('Cookie', principal.cookies)
+          .expect(200);
+
+        expect(res.text).toContain('action="/auth/logout"');
+        expect(res.text).toContain('action="/auth/sair-de-todos"');
+        expect(res.text).toContain('id="account-menu"');
+      },
+    );
+
+    it('leva o token CSRF em todo formulário de saída', async () => {
+      const res = await request(http)
+        .get('/doses/hoje')
+        .set('Cookie', principal.cookies)
+        .expect(200);
+
+      // sair + sair de todos, na sidebar e no menu da conta.
+      expect(res.text.split('action="/auth/').length - 1).toBe(4);
+      expect(res.text).toContain(`value="${principal.csrfToken}"`);
     });
   });
 

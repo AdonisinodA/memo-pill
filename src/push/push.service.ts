@@ -47,6 +47,30 @@ export class PushService {
   }
 
   /**
+   * Remove a inscrição de UM aparelho.
+   *
+   * O filtro inclui o `userId` de propósito: o endpoint chega do cliente, e sem
+   * esse escopo bastaria conhecer o endpoint alheio para calar as notificações
+   * de outra pessoa.
+   *
+   * @returns quantas inscrições saíram — zero é resultado normal, não erro.
+   */
+  async removeDevice(userId: string, endpoint: string): Promise<number> {
+    const { affected } = await this.subscriptions.delete({ userId, endpoint });
+    return affected ?? 0;
+  }
+
+  /**
+   * Remove todas as inscrições do usuário. Usado ao sair de todos os aparelhos:
+   * a notificação carrega nome de medicamento e horário, e um aparelho que
+   * deixou de ser confiável não pode seguir recebendo isso.
+   */
+  async removeAllDevices(userId: string): Promise<number> {
+    const { affected } = await this.subscriptions.delete({ userId });
+    return affected ?? 0;
+  }
+
+  /**
    * Envia a todas as inscrições do usuário.
    *
    * O payload carrega apenas o identificador da dose: o nome do medicamento é

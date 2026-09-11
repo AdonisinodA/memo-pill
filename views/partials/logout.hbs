@@ -1,0 +1,28 @@
+{{!--
+  Formulários de saída. Parcial separada porque aparece em dois lugares — no
+  rodapé da sidebar (desktop) e no menu do topo (mobile).
+
+  POST, e não link: sair muda estado, e o token CSRF impede que um site de
+  terceiro derrube a sessão do usuário à revelia. O campo `pushEndpoint` é
+  preenchido por /js/push.js e diz ao servidor qual aparelho desinscrever;
+  vazio, o logout acontece do mesmo jeito.
+--}}
+<form method="post" action="/auth/logout">
+  <input type="hidden" name="_csrf" value="{{csrfToken}}">
+  <input type="hidden" name="pushEndpoint" value="" data-push-endpoint>
+  <button type="submit"
+          class="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+    </svg>
+    Sair
+  </button>
+</form>
+
+<form method="post" action="/auth/sair-de-todos" class="mt-1.5">
+  <input type="hidden" name="_csrf" value="{{csrfToken}}">
+  <button type="submit"
+          class="w-full rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-700">
+    Sair de todos os aparelhos
+  </button>
+</form>

@@ -29,6 +29,22 @@ export class User {
   @Column({ name: 'consent_at', type: 'integer' })
   consentAt!: number;
 
+  /**
+   * Geração das sessões válidas (ADR-001 §2.4). Todo refresh token carrega a
+   * versão vigente na emissão; "Sair de todos os aparelhos" incrementa este
+   * número e, com isso, recusa de uma vez todos os tokens já emitidos.
+   *
+   * Contador, e não instante de corte: com timestamp, o token emitido no mesmo
+   * segundo do logout escaparia — e o login logo em seguida cairia no próprio
+   * corte que acabou de ser criado. O contador não tem granularidade para
+   * errar.
+   *
+   * Cobre o caso que a revogação por `jti` não cobre: a conta comprometida, em
+   * que o dono não conhece o token do atacante para revogá-lo individualmente.
+   */
+  @Column({ name: 'sessions_version', type: 'integer', default: 0 })
+  sessionsVersion!: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

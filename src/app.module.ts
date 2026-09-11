@@ -1,19 +1,22 @@
 import { MiddlewareConsumer, Module, NestModule, ValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { join } from 'node:path';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { RevokedToken } from './auth/revoked-token.entity';
 import { CommonModule } from './common/common.module';
 import { CsrfMiddleware } from './common/csrf/csrf.middleware';
 import { FlashMiddleware } from './common/flash/flash.middleware';
 import { HttpErrorFilter } from './common/http-error.filter';
+import { NoStoreInterceptor } from './common/no-store.interceptor';
 import { configuration } from './config/configuration';
 import { applyPragmas } from './database/sqlite-options';
 import { DoseLog } from './doses/dose-log.entity';
 import { DosesModule } from './doses/doses.module';
+import { LogoutModule } from './logout/logout.module';
 import { Medication } from './medications/medication.entity';
 import { MedicationsModule } from './medications/medications.module';
 import { PushSubscription } from './push/push-subscription.entity';
@@ -49,7 +52,7 @@ export const THROTTLE_WINDOW_MS = 60_000;
       useFactory: (config: ConfigService) => ({
         type: 'better-sqlite3' as const,
         database: config.getOrThrow<string>('databasePath'),
-        entities: [User, Medication, DoseLog, PushSubscription],
+        entities: [User, Medication, DoseLog, PushSubscription, RevokedToken],
         // Em produção o schema vem de migrations versionadas, aplicadas no boot.
         migrations: [join(__dirname, 'database', 'migrations', '*.js')],
         migrationsRun: process.env.NODE_ENV === 'production',
@@ -63,10 +66,12 @@ export const THROTTLE_WINDOW_MS = 60_000;
     MedicationsModule,
     DosesModule,
     PushModule,
+    LogoutModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: HttpErrorFilter },
+    { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({

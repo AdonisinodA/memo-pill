@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { SessionGuard } from '../../auth/session.guard';
 
@@ -10,9 +10,9 @@ import { SessionGuard } from '../../auth/session.guard';
 @Controller('csrf')
 @UseGuards(SessionGuard)
 export class CsrfController {
-  // Sem cache: o token não pode ser retido pelo Service Worker nem pelo browser.
+  // O `no-store` desta resposta vem do NoStoreInterceptor global — o token não
+  // pode ser retido pelo Service Worker nem pelo navegador.
   @Get()
-  @Header('Cache-Control', 'no-store')
   token(@Req() req: Request): { csrfToken: string } {
     return { csrfToken: req.csrfToken! };
   }

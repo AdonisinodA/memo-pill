@@ -4,6 +4,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService, REFRESH_TTL_SEG } from './auth.service';
+import { REFRESH_COOKIE_OPTIONS } from './refresh-cookie';
 
 /** Limite mais rigoroso para rotas de credencial (ADR-001 §2.4). */
 const CREDENTIAL_RATE_LIMIT = { default: { ttl: 60_000, limit: 5 } };
@@ -42,12 +43,6 @@ export class AuthController {
     res.redirect('/doses/hoje');
   }
 
-  @Post('auth/logout')
-  logout(@Res() res: Response): void {
-    res.clearCookie(REFRESH_COOKIE, { path: '/' });
-    res.redirect('/login');
-  }
-
   /** Troca o refresh do cookie por um access token de curta duração. */
   @Post('auth/refresh')
   @UseGuards(SessionGuard)
@@ -59,13 +54,9 @@ export class AuthController {
 
   private setRefreshCookie(res: Response, refreshToken: string): void {
     res.cookie(REFRESH_COOKIE, refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      // Lax, e não Strict: Strict suprimiria o cookie na navegação vinda do
-      // clique na notificação push, que é o fluxo central (ADR-001 §2.4).
-      sameSite: 'lax',
-      path: '/',
+      ...REFRESH_COOKIE_OPTIONS,
       maxAge: REFRESH_TTL_SEG * 1000,
     });
   }
+
 }

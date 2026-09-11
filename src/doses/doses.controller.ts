@@ -45,7 +45,13 @@ export class DosesController {
   async history(@Req() req: Request) {
     const user = req.user!;
     const { summary, doses } = await this.doses.history(user.id, user.timezone);
-    return { title: 'Histórico', csrfToken: req.csrfToken, summary, doses };
+    return {
+      title: 'Histórico',
+      csrfToken: req.csrfToken,
+      user: { name: user.name },
+      summary,
+      doses,
+    };
   }
 
   /**

@@ -182,7 +182,9 @@ Os testes não tocam o banco de desenvolvimento nem exigem `.env`.
 |---|---|---|
 | `GET` | `/` | Redireciona para a tela do dia |
 | `GET` | `/cadastro`, `/login` | Formulários de conta |
-| `POST` | `/auth/cadastro`, `/auth/login`, `/auth/logout`, `/auth/refresh` | Sessão |
+| `POST` | `/auth/cadastro`, `/auth/login`, `/auth/refresh` | Sessão |
+| `POST` | `/auth/logout` | Sai deste aparelho (revoga o token por `jti`) |
+| `POST` | `/auth/sair-de-todos` | Sai de todos (avança `sessions_version`) |
 | `GET` | `/doses/hoje` | Doses do dia (`start_url` do PWA) |
 | `POST` | `/doses/:id/taken`, `/doses/:id/skipped` | Registro de adesão |
 | `GET` | `/doses/:id/resumo` | JSON consumido pelo Service Worker |
@@ -360,8 +362,33 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   não revele quais e-mails existem; a mensagem de erro é a mesma nos dois casos
   ("Credenciais inválidas").
 - **Tokens tipados.** O payload carrega `kind: 'access' | 'refresh'` e o refresh
-  é rejeitado se o tipo não bater (`auth.service.ts:79`) — um access token não
-  pode ser reapresentado como refresh.
+  é rejeitado se o tipo não bater — um access token não pode ser reapresentado
+  como refresh.
+- **Logout que vale no servidor.** O refresh token é um JWT de 30 dias: apagar o
+  cookie não o desfaz, e uma cópia dele continuaria abrindo a conta até expirar.
+  Sair revoga o token de fato, por dois caminhos complementares:
+  - **Este aparelho:** o `jti` do token vai para `revoked_tokens` e
+    `userFromToken` passa a recusá-lo, sem tocar nas outras sessões. Um cron
+    diário descarta as revogações cujo token já venceu sozinho, para a tabela
+    não crescer indefinidamente.
+  - **Todos os aparelhos:** `users.sessions_version` é incrementado, e todo
+    token emitido na geração anterior é recusado de uma vez. É um contador, e
+    não um instante de corte, porque com timestamp o token emitido no mesmo
+    segundo do logout escaparia da comparação.
+
+  Junto com isso, o logout apaga o cookie de sessão **e** o de CSRF (vinculado à
+  sessão, ele passaria para a próxima pessoa a usar o aparelho) e desliga a
+  inscrição push do aparelho — a notificação carrega nome de medicamento e
+  horário, e seguiria chegando para quem ficasse com o aparelho.
+- **Sem cache das páginas autenticadas.** `NoStoreInterceptor` põe
+  `Cache-Control: no-store, private` em toda resposta do Nest: sem isso, o botão
+  Voltar depois de sair reexibe o dashboard a partir do cache do navegador, com
+  os medicamentos na tela e sem sessão nenhuma para autorizar aquilo. Os assets
+  estáticos seguem cacheáveis — não carregam dado de ninguém.
+- **Sair é à prova de falha.** A rota não tem guard de sessão (sair com a sessão
+  vencida leva ao mesmo lugar), é idempotente, e o endpoint push vai num campo
+  do formulário em vez de numa chamada JavaScript antes do submit: se o script
+  falhar, o usuário sai do mesmo jeito.
 - Senha mínima de 8 caracteres; e-mail normalizado (`trim`/`lowercase`) antes de
   comparar, para que não existam duas contas com o mesmo e-mail em caixas
   diferentes.
@@ -443,7 +470,8 @@ Identificadores, nomes de arquivo, colunas do banco e campos de formulário em
 ```
 src/
   auth/          cadastro, login, refresh, guard de sessão
-  common/        relógio injetável, CSRF, flash/toast, filtro de erro, helpers de view
+  common/        relógio injetável, CSRF, flash/toast, filtro de erro, no-store, helpers de view
+  logout/        encerramento de sessão — cruza auth e push, por isso módulo próprio
   config/        leitura e validação de variáveis de ambiente
   database/      PRAGMAs do SQLite, data source e migrations
   doses/         geração, agendador (cron), registro de adesão, histórico
@@ -452,7 +480,7 @@ src/
   users/         entidade de usuário
   configure-app.ts   Express, Helmet/CSP e view engine — compartilhado com o e2e
 views/           dashboard, login, medications, medication-new, history, error
-  partials/      nav (sidebar + barra inferior) e toast, usados pelo layout
+  partials/      nav (sidebar + barra inferior), toast e logout
 public/          Service Worker, inscrição push, manifest, CSS compilado e ícones
 test/            e2e e renderização de view
 ```

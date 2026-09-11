@@ -19,6 +19,7 @@ export class MedicationsController {
     return {
       title: 'Meus remédios',
       csrfToken: req.csrfToken,
+      user: { name: user.name },
       medications: await this.medications.listForView(user.id, user.timezone),
     };
   }
@@ -26,7 +27,11 @@ export class MedicationsController {
   @Get('novo')
   @Render('medication-new')
   newForm(@Req() req: Request) {
-    return { title: 'Adicionar remédio', csrfToken: req.csrfToken };
+    return {
+      title: 'Adicionar remédio',
+      csrfToken: req.csrfToken,
+      user: { name: req.user!.name },
+    };
   }
 
   @Post()

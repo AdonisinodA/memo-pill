@@ -3,9 +3,10 @@ import { User } from '../../src/users/user.entity';
 import { Medication } from '../../src/medications/medication.entity';
 import { DoseLog } from '../../src/doses/dose-log.entity';
 import { PushSubscription } from '../../src/push/push-subscription.entity';
+import { RevokedToken } from '../../src/auth/revoked-token.entity';
 import { applyPragmas } from '../../src/database/sqlite-options';
 
-export const ENTITIES = [User, Medication, DoseLog, PushSubscription];
+export const ENTITIES = [User, Medication, DoseLog, PushSubscription, RevokedToken];
 
 /**
  * DataSource SQLite em memória com o mesmo schema e os mesmos PRAGMAs da

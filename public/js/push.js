@@ -9,6 +9,8 @@
  * (ADR-001 §2.4).
  */
 (function () {
+  preencherEndpointDeSaida();
+
   const banner = document.getElementById('push-banner');
   if (!banner) return;
 
@@ -131,3 +133,28 @@
   botao.addEventListener('click', ativar);
   iniciar();
 })();
+
+/**
+ * Diz ao formulário de saída qual aparelho desinscrever.
+ *
+ * Vai num campo do próprio formulário, e não numa chamada antes do submit: se
+ * o JavaScript falhar, o logout continua acontecendo — só sem desligar o push.
+ * O contrário (interceptar o submit) faria uma falha aqui impedir o usuário
+ * de sair, que é o pior desfecho possível para um botão de segurança.
+ */
+async function preencherEndpointDeSaida() {
+  const campos = document.querySelectorAll('input[data-push-endpoint]');
+  if (campos.length === 0) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    campos.forEach((campo) => {
+      campo.value = subscription.endpoint;
+    });
+  } catch (erro) {
+    console.error('Não foi possível identificar a inscrição deste aparelho', erro);
+  }
+}
