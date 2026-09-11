@@ -1,0 +1,23 @@
+{{!--
+  Erro em navegação GET. Não há para onde voltar com um toast sem arriscar um
+  laço de redirect (a página de destino seria a que acabou de falhar), então o
+  erro é apresentado inteiro, com caminho de saída.
+--}}
+<div class="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 text-slate-800">
+  <div class="w-full max-w-sm text-center">
+    <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+      <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" /><path d="M12 8v5M12 16.5h.01" />
+      </svg>
+    </span>
+
+    <h1 class="mt-5 text-xl font-semibold tracking-tight text-slate-900">Não foi possível abrir esta página</h1>
+    <p class="mt-2 text-sm leading-relaxed text-slate-600">{{message}}</p>
+    <p class="mt-1 text-xs tabular-nums text-slate-400">Erro {{status}}</p>
+
+    <a href="/doses/hoje"
+       class="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700">
+      Voltar para hoje
+    </a>
+  </div>
+</div>

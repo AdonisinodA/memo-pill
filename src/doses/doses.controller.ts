@@ -1,11 +1,13 @@
 import {
-  Body, Controller, Get, Param, ParseUUIDPipe, Post, Redirect,
-  Render, Req, UseGuards,
+  Controller, Get, HttpStatus, Param, ParseUUIDPipe, Post, Redirect,
+  Render, Req, Res, UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { DateTime } from 'luxon';
 import { SessionGuard } from '../auth/session.guard';
+import { setFlash } from '../common/flash/flash';
 import { Clock } from '../common/time/clock';
+import { wantsHtml } from '../common/wants-html';
 import { DoseStatus } from './dose-status.enum';
 import { DosesService, RecordableStatus } from './doses.service';
 
@@ -63,24 +65,53 @@ export class DosesController {
   }
 
   @Post('doses/:id/taken')
-  recordTaken(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    return this.record(req, id, DoseStatus.TAKEN);
+  recordTaken(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.record(req, res, id, DoseStatus.TAKEN);
   }
 
   @Post('doses/:id/skipped')
-  recordSkipped(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    return this.record(req, id, DoseStatus.SKIPPED);
+  recordSkipped(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.record(req, res, id, DoseStatus.SKIPPED);
   }
 
   /**
    * Formulário HBS espera redirect; o Service Worker espera JSON.
    * O `Accept` da requisição decide.
+   *
+   * A resposta é escrita à mão, e não devolvida ao Nest: o formato varia por
+   * requisição, e `@Redirect()` — o caminho declarativo — redireciona sempre.
+   * Sem ele, o objeto `{ url, statusCode }` voltava serializado como JSON na
+   * tela do navegador, em vez de recarregar o dia.
    */
-  private async record(req: Request, id: string, status: RecordableStatus) {
+  private async record(
+    req: Request,
+    res: Response,
+    id: string,
+    status: RecordableStatus,
+  ): Promise<void> {
     const dose = await this.doses.record(req.user!.id, id, status);
-    if (req.accepts(['html', 'json']) === 'html') {
-      return { url: '/doses/hoje', statusCode: 303 };
+
+    if (wantsHtml(req)) {
+      const name = dose.medication?.name ?? 'Dose';
+      setFlash(res, {
+        type: 'success',
+        message:
+          status === DoseStatus.TAKEN
+            ? `${name} registrada como tomada.`
+            : `${name} marcada como pulada.`,
+      });
+      res.redirect(HttpStatus.SEE_OTHER, '/doses/hoje');
+      return;
     }
-    return { id: dose.id, status: dose.status };
+
+    res.status(HttpStatus.CREATED).json({ id: dose.id, status: dose.status });
   }
 }

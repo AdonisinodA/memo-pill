@@ -1,8 +1,9 @@
 import {
-  Body, Controller, Get, Param, ParseUUIDPipe, Post, Render, Req, Res, UseGuards,
+  Body, Controller, Get, HttpStatus, Param, ParseUUIDPipe, Post, Render, Req, Res, UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SessionGuard } from '../auth/session.guard';
+import { setFlash } from '../common/flash/flash';
 import { CreateMedicationDto } from './dto/medication.dto';
 import { MedicationsService } from './medications.service';
 
@@ -14,10 +15,11 @@ export class MedicationsController {
   @Get()
   @Render('medications')
   async list(@Req() req: Request) {
+    const user = req.user!;
     return {
-      title: 'Medicamentos',
+      title: 'Meus remédios',
       csrfToken: req.csrfToken,
-      medications: await this.medications.list(req.user!.id),
+      medications: await this.medications.listForView(user.id, user.timezone),
     };
   }
 
@@ -34,8 +36,12 @@ export class MedicationsController {
     @Res() res: Response,
   ): Promise<void> {
     const user = req.user!;
-    await this.medications.create(user.id, user.timezone, dto);
-    res.redirect(303, '/doses/hoje');
+    const medication = await this.medications.create(user.id, user.timezone, dto);
+    setFlash(res, {
+      type: 'success',
+      message: `${medication.name} cadastrado. Os lembretes já estão agendados.`,
+    });
+    res.redirect(HttpStatus.SEE_OTHER, '/doses/hoje');
   }
 
   @Post(':id/remover')
@@ -45,6 +51,10 @@ export class MedicationsController {
     @Res() res: Response,
   ): Promise<void> {
     await this.medications.remove(req.user!.id, id);
-    res.redirect(303, '/medicamentos');
+    setFlash(res, {
+      type: 'success',
+      message: 'Remédio removido. As doses futuras foram canceladas.',
+    });
+    res.redirect(HttpStatus.SEE_OTHER, '/medicamentos');
   }
 }

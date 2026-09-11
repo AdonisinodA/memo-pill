@@ -48,4 +48,25 @@ describe('registerHbsHelpers', () => {
       expect(compile('{{#each (range 100000)}}x{{/each}}')({}).length).toBe(100);
     });
   });
+
+  describe('date', () => {
+    it('converte a data ISO persistida para o formato brasileiro', () => {
+      expect(compile('{{date d}}')({ d: '2026-08-30' })).toBe('30/08/2026');
+    });
+
+    // Melhor mostrar o valor cru do banco do que "Invalid Date" no meio da
+    // página: o dado continua legível e o defeito fica visível.
+    it('devolve o valor original quando não é uma data ISO', () => {
+      expect(compile('{{date d}}')({ d: 'uso contínuo' })).toBe('uso contínuo');
+    });
+
+    it('não imprime nada para valor ausente', () => {
+      expect(compile('{{date d}}')({})).toBe('');
+      expect(compile('{{date d}}')({ d: null })).toBe('');
+    });
+
+    it('escapa o valor recebido', () => {
+      expect(compile('{{date d}}')({ d: '<b>x</b>' })).toBe('&lt;b&gt;x&lt;/b&gt;');
+    });
+  });
 });

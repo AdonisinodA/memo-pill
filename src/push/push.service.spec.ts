@@ -41,6 +41,48 @@ describe('PushService', () => {
   const subscribe = (endpoint: string) =>
     service.subscribe(userId, { endpoint, p256dh: 'chave', auth: 'auth' });
 
+  /**
+   * O navegador reinscreve a cada visita e devolve o mesmo `endpoint`, que é
+   * único na tabela. Sem o upsert, a segunda visita virava 500 e o aparelho
+   * ficava sem lembrete.
+   */
+  describe('inscrever', () => {
+    const dados = (over = {}) => ({
+      endpoint: 'https://fcm.example/mesmo-aparelho',
+      p256dh: 'chave-1',
+      auth: 'auth-1',
+      ...over,
+    });
+
+    it('não duplica a inscrição do mesmo aparelho', async () => {
+      await service.subscribe(userId, dados());
+      await service.subscribe(userId, dados());
+
+      expect(await ds.getRepository(PushSubscription).count()).toBe(1);
+    });
+
+    it('atualiza as chaves quando o navegador as renova', async () => {
+      await service.subscribe(userId, dados());
+      await service.subscribe(userId, dados({ p256dh: 'chave-2', auth: 'auth-2' }));
+
+      const inscricao = await ds.getRepository(PushSubscription).findOneByOrFail({
+        endpoint: dados().endpoint,
+      });
+      expect(inscricao).toMatchObject({ p256dh: 'chave-2', auth: 'auth-2' });
+    });
+
+    // Aparelho compartilhado: os lembretes passam a ser de quem entrou por
+    // último, e não dos dois ao mesmo tempo.
+    it('transfere o aparelho para a última conta que se inscreveu', async () => {
+      const outro = await createUser(ds);
+      await service.subscribe(userId, dados());
+      await service.subscribe(outro.id, dados());
+
+      expect((await service.notifyDose(userId, 'dose-1')).delivered).toBe(0);
+      expect((await service.notifyDose(outro.id, 'dose-1')).delivered).toBe(1);
+    });
+  });
+
   describe('notificarDose', () => {
     it('entrega a todas as inscrições do usuário', async () => {
       await subscribe('https://fcm.example/1');

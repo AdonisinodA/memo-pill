@@ -5,6 +5,31 @@
 
 const ROTA_HOJE = '/doses/hoje';
 
+/** Título usado quando o resumo da dose não chega ou vem incompleto. */
+const TITULO_PADRAO = 'Hora do seu medicamento';
+const CORPO_PADRAO = 'Toque para ver os detalhes.';
+
+/**
+ * Assume o controle assim que instala, sem esperar as abas abertas fecharem.
+ *
+ * O padrão do Service Worker é ficar em `waiting` enquanto a versão anterior
+ * controla algum cliente — e quem renderiza a notificação é justamente o SW.
+ * Sem isto, uma correção aqui só chega ao usuário quando ele fecha todas as
+ * abas do app, e até lá a versão antiga segue montando as notificações.
+ */
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+/** Texto não vazio; qualquer outra coisa vira o padrão, nunca "undefined". */
+function textoOu(valor, padrao) {
+  return typeof valor === 'string' && valor.trim() !== '' ? valor : padrao;
+}
+
 /**
  * O payload push carrega apenas o identificador da dose. O nome do medicamento
  * é buscado aqui, na própria origem, para não trafegar dado de saúde pelo push
@@ -22,8 +47,8 @@ async function mostrarLembrete(event) {
     doseId = null;
   }
 
-  let titulo = 'Hora do seu medicamento';
-  let corpo = 'Toque para ver os detalhes.';
+  let titulo = TITULO_PADRAO;
+  let corpo = CORPO_PADRAO;
 
   if (doseId) {
     try {
@@ -33,8 +58,14 @@ async function mostrarLembrete(event) {
       });
       if (res.ok) {
         const dose = await res.json();
-        titulo = dose.nome;
-        corpo = [dose.dosagem, dose.horario].filter(Boolean).join(' · ');
+        // Os campos são os de `DoseView` (name/dosage/time). O valor passa por
+        // `textoOu` porque o título vai direto para a tela de bloqueio: um
+        // campo ausente escreveria "undefined" ali, sem chance de correção.
+        titulo = textoOu(dose.name, TITULO_PADRAO);
+        corpo = textoOu(
+          [dose.dosage, dose.time].filter((v) => typeof v === 'string' && v !== '').join(' · '),
+          CORPO_PADRAO,
+        );
       }
     } catch {
       // Sem rede: cai no texto genérico em vez de engolir a notificação.

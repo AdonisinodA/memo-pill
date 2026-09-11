@@ -1,4 +1,8 @@
-<div class="min-h-screen bg-slate-50 px-4 py-8 text-slate-800 md:px-8">
+<div class="min-h-screen bg-slate-50 text-slate-800 antialiased">
+
+  {{> nav active="historico"}}
+
+  <main class="md:ml-64 px-4 pt-6 pb-32 md:px-8 md:pt-8 md:pb-10">
   <div class="mx-auto max-w-2xl">
     <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Histórico</h1>
     <p class="mt-1 text-sm text-slate-500">Últimos {{summary.days}} dias</p>
@@ -39,6 +43,6 @@
       {{/each}}
     </ul>
 
-    <a href="/doses/hoje" class="mt-6 inline-block text-sm font-medium text-teal-700 hover:text-teal-800">Voltar para hoje</a>
   </div>
+  </main>
 </div>

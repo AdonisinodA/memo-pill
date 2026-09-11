@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
+import { DateTime } from "luxon";
 import {
 	type DataSource,
 	type EntityManager,
@@ -22,6 +23,26 @@ import type {
 } from "./dto/medication.dto";
 import { Medication } from "./medication.entity";
 
+/**
+ * Situação do tratamento perante a data de hoje. Distingue o que já acabou do
+ * que ainda vai começar — sem isso a lista mostra tudo como se estivesse
+ * valendo, e o usuário não entende por que um remédio não gera dose.
+ */
+export type MedicationStatus = "SCHEDULED" | "ACTIVE" | "ENDED";
+
+/** Modelo de view consumido por `views/medications.hbs`. */
+export interface MedicationView {
+	id: string;
+	name: string;
+	dosage: string;
+	/** Horários locais "HH:mm", em ordem crescente. */
+	times: string[];
+	startsOn: string;
+	/** Nulo = uso contínuo. */
+	endsOn: string | null;
+	status: MedicationStatus;
+}
+
 @Injectable()
 export class MedicationsService {
 	constructor(
@@ -35,6 +56,31 @@ export class MedicationsService {
 			where: { userId, deletedAt: IsNull() },
 			order: { name: "ASC" },
 		});
+	}
+
+	/**
+	 * Lista para a tela de remédios cadastrados. O status é derivado aqui, e não
+	 * na view: depende da data de HOJE no fuso do usuário, que o Handlebars não
+	 * tem como resolver.
+	 */
+	async listForView(
+		userId: string,
+		timezone: string,
+	): Promise<MedicationView[]> {
+		const today = DateTime.fromSeconds(this.clock.nowSeconds(), {
+			zone: timezone,
+		}).toISODate()!;
+
+		const medications = await this.list(userId);
+		return medications.map((m) => ({
+			id: m.id,
+			name: m.name,
+			dosage: m.dosage,
+			times: [...m.times].sort(),
+			startsOn: m.startsOn,
+			endsOn: m.endsOn,
+			status: statusOn(m, today),
+		}));
 	}
 
 	/**
@@ -208,4 +254,11 @@ export class MedicationsService {
 		if (!medication) throw new NotFoundException("Medicamento não encontrado");
 		return medication;
 	}
+}
+
+/** Comparação lexicográfica: "YYYY-MM-DD" ordena igual à ordem cronológica. */
+function statusOn(medication: Medication, today: string): MedicationStatus {
+	if (medication.endsOn && medication.endsOn < today) return "ENDED";
+	if (medication.startsOn > today) return "SCHEDULED";
+	return "ACTIVE";
 }

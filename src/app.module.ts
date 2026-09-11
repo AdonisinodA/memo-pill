@@ -8,7 +8,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { CommonModule } from './common/common.module';
 import { CsrfMiddleware } from './common/csrf/csrf.middleware';
-import { UnauthenticatedFilter } from './common/unauthenticated.filter';
+import { FlashMiddleware } from './common/flash/flash.middleware';
+import { HttpErrorFilter } from './common/http-error.filter';
 import { configuration } from './config/configuration';
 import { applyPragmas } from './database/sqlite-options';
 import { DoseLog } from './doses/dose-log.entity';
@@ -65,7 +66,7 @@ export const THROTTLE_WINDOW_MS = 60_000;
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_FILTER, useClass: UnauthenticatedFilter },
+    { provide: APP_FILTER, useClass: HttpErrorFilter },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({
@@ -78,6 +79,9 @@ export const THROTTLE_WINDOW_MS = 60_000;
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(CsrfMiddleware).forRoutes('*');
+    // FlashMiddleware antes do CSRF: o token CSRF inválido é lançado de dentro
+    // do próprio CsrfMiddleware, e a mensagem pendente precisa já ter sido
+    // lida da requisição quando isso acontece.
+    consumer.apply(FlashMiddleware, CsrfMiddleware).forRoutes('*');
   }
 }

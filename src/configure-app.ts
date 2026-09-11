@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import * as hbs from "hbs";
@@ -47,4 +48,21 @@ export function configureApp(app: NestExpressApplication): void {
 	// view é servida sozinha, sem <html>, sem <head> e sem o <link> do CSS.
 	app.set("view options", { layout: "layouts/main" });
 	registerHbsHelpers(hbs.handlebars);
+	registerPartials(join(ROOT, "views", "partials"));
+}
+
+/**
+ * Registro SÍNCRONO das parciais. O `hbs.registerPartials` do pacote lê o
+ * diretório de forma assíncrona e devolve antes de terminar: uma requisição que
+ * chegue nesse intervalo — e o primeiro teste e2e chega — renderiza a página
+ * sem a parcial. Ler aqui, de uma vez, elimina a corrida.
+ */
+function registerPartials(dir: string): void {
+	for (const file of readdirSync(dir)) {
+		if (!file.endsWith(".hbs")) continue;
+		hbs.handlebars.registerPartial(
+			basename(file, ".hbs"),
+			readFileSync(join(dir, file), "utf8"),
+		);
+	}
 }

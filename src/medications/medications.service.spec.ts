@@ -55,6 +55,72 @@ describe('MedicationsService', () => {
       ...over,
     });
 
+  /**
+   * A tela de remédios cadastrados mostra a posologia inteira, e não as doses
+   * do dia: um tratamento que ainda não começou ou já terminou não aparece no
+   * dashboard e precisa aparecer aqui, com a situação explícita.
+   */
+  describe('listar para a tela', () => {
+    const listar = () => service.listForView(userId, SP);
+
+    it('devolve a posologia completa do medicamento', async () => {
+      const medication = await create({ endsOn: '2026-09-15' });
+
+      expect(await listar()).toEqual([
+        {
+          id: medication.id,
+          name: 'Losartana',
+          dosage: '50 mg',
+          times: ['08:00', '20:00'],
+          startsOn: '2026-08-30',
+          endsOn: '2026-09-15',
+          status: 'ACTIVE',
+        },
+      ]);
+    });
+
+    it('ordena os horários, independentemente da ordem do cadastro', async () => {
+      await create({ times: ['22:00', '06:30', '14:00'] });
+      expect((await listar())[0].times).toEqual(['06:30', '14:00', '22:00']);
+    });
+
+    it('marca como A COMEÇAR o tratamento que ainda não iniciou', async () => {
+      await create({ startsOn: '2026-09-10' });
+      expect((await listar())[0].status).toBe('SCHEDULED');
+    });
+
+    it('marca como ENCERRADO o tratamento cuja data de fim já passou', async () => {
+      await create({ startsOn: '2026-08-01', endsOn: '2026-08-20' });
+      expect((await listar())[0].status).toBe('ENDED');
+    });
+
+    // A data de fim é inclusiva: no último dia ainda há doses a tomar.
+    it('mantém EM USO no próprio dia do término', async () => {
+      await create({ endsOn: '2026-08-30' });
+      expect((await listar())[0].status).toBe('ACTIVE');
+    });
+
+    it('usa a data de hoje no fuso do usuário, não em UTC', async () => {
+      // 01:00 UTC de 31/08 ainda é 22:00 do dia 30 em São Paulo (UTC-3).
+      clock.set(sec('2026-08-31T01:00:00Z'));
+      await create({ startsOn: '2026-08-31' });
+
+      expect((await listar())[0].status).toBe('SCHEDULED');
+    });
+
+    it('não lista medicamento removido', async () => {
+      const medication = await create();
+      await service.remove(userId, medication.id);
+      expect(await listar()).toEqual([]);
+    });
+
+    it('não lista medicamento de outro usuário', async () => {
+      await create();
+      const outro = (await createUser(ds)).id;
+      expect(await service.listForView(outro, SP)).toEqual([]);
+    });
+  });
+
   describe('criar', () => {
     it('materializa as doses do horizonte de 90 dias', async () => {
       const medication = await create();

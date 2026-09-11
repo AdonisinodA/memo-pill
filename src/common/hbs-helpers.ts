@@ -15,4 +15,16 @@ export function registerHbsHelpers(hbs: typeof Handlebars): void {
     const total = typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;
     return Array.from({ length: Math.min(total, 100) }, (_, i) => i);
   });
+
+  /**
+   * Datas de tratamento são persistidas como "YYYY-MM-DD" (data local, sem
+   * fuso — ADR-001 §2.2). Na tela elas aparecem no formato brasileiro.
+   * Valor fora do formato passa adiante sem conversão, em vez de virar
+   * "Invalid Date" no meio da página.
+   */
+  hbs.registerHelper('date', (value: unknown) => {
+    if (typeof value !== 'string') return '';
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+  });
 }

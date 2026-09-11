@@ -25,3 +25,15 @@ export const TERMINAL_STATUSES: readonly DoseStatus[] = [
   DoseStatus.MISSED,
   DoseStatus.CANCELED,
 ];
+
+/**
+ * Rótulo de cada status em português. A mensagem de conflito vai parar no toast
+ * da tela — sem isto o usuário lê o identificador do enum, "TAKEN".
+ */
+export const STATUS_LABELS: Readonly<Record<DoseStatus, string>> = {
+  [DoseStatus.PENDING]: 'pendente',
+  [DoseStatus.TAKEN]: 'tomada',
+  [DoseStatus.SKIPPED]: 'pulada',
+  [DoseStatus.MISSED]: 'não registrada',
+  [DoseStatus.CANCELED]: 'cancelada',
+};

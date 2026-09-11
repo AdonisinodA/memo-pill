@@ -36,7 +36,10 @@ export class DoseSchedulerService {
     const missed = await this.markMissed();
     const dispatched = await this.dispatchDue();
     if (missed || dispatched) {
-      this.logger.log(`${dispatched} dose(s) notificada(s), ${missed} perdida(s)`);
+      // "despachada" e não "notificada": o que este número mede é a dose
+      // reivindicada para envio. Se a entrega chegou a algum aparelho é outra
+      // conta, e quem avisa é o warning de `dispatchDue`.
+      this.logger.log(`${dispatched} dose(s) despachada(s), ${missed} perdida(s)`);
     }
   }
 
@@ -83,8 +86,19 @@ export class DoseSchedulerService {
     let dispatched = 0;
     for (const dose of candidates) {
       if (!(await this.claim(dose.id, now))) continue;
-      await this.push.notifyDose(dose.medication!.userId, dose.id);
+
+      const result = await this.push.notifyDose(dose.medication!.userId, dose.id);
       dispatched++;
+
+      // Dose despachada que não alcançou aparelho nenhum: o usuário não tem
+      // inscrição push ativa. Sem este aviso a falha é invisível — a dose fica
+      // com `notified_at` preenchido, o contador sobe e nada chega ao celular.
+      if (result.delivered === 0) {
+        this.logger.warn(
+          `Dose ${dose.id} não chegou a nenhum aparelho: ` +
+            `usuário ${dose.medication!.userId} não tem inscrição push ativa`,
+        );
+      }
     }
     return dispatched;
   }

@@ -6,52 +6,7 @@
 
 <div class="min-h-screen bg-slate-50 text-slate-800 antialiased">
 
-  {{!-- ==================== SIDEBAR (>= md) ==================== --}}
-  <aside class="hidden md:flex md:flex-col w-64 h-screen fixed left-0 top-0 z-20 bg-white border-r border-slate-200">
-
-    <div class="flex items-center gap-2.5 px-6 h-16 border-b border-slate-200">
-      <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-600">
-        <svg class="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
-          <path d="m8.5 8.5 7 7" />
-        </svg>
-      </span>
-      <span class="text-base font-semibold tracking-tight text-slate-900">Lembrete</span>
-    </div>
-
-    <nav class="flex-1 px-3 py-4" aria-label="Navegação principal">
-      <ul class="space-y-1">
-        <li>
-          <a href="/doses/hoje" aria-current="page"
-             class="flex items-center gap-3 rounded-xl bg-teal-50 px-3 py-2.5 text-sm font-semibold text-teal-700">
-            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /><path d="m9 16 2 2 4-4" />
-            </svg>
-            Hoje
-          </a>
-        </li>
-        <li>
-          <a href="/historico"
-             class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900">
-            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 3v18h18" /><path d="M18.7 8 13 13.7l-3-3L7 14" />
-            </svg>
-            Histórico
-          </a>
-        </li>
-      </ul>
-    </nav>
-
-    <div class="p-3 border-t border-slate-200">
-      <a href="/medicamentos/novo"
-         class="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Adicionar remédio
-      </a>
-    </div>
-  </aside>
+  {{> nav active="hoje"}}
 
   {{!-- ==================== CONTEÚDO ==================== --}}
   <main class="md:ml-64 px-4 pt-6 pb-32 md:px-8 md:pt-8 md:pb-10">
@@ -62,6 +17,26 @@
         Olá, {{user.name}}
       </h1>
     </header>
+
+    {{!--
+      Ativação das notificações. Nasce oculto e é revelado por /js/push.js: o
+      estado da permissão vive no navegador, e o servidor não tem como saber,
+      na renderização, se este aparelho já está inscrito.
+    --}}
+    <div id="push-banner" role="status"
+         class="mb-6 hidden flex items-start gap-3 rounded-2xl border border-teal-200 bg-teal-50 p-4 md:mb-8">
+      <span class="mt-0.5 shrink-0 text-teal-700">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+        </svg>
+      </span>
+      <p id="push-text" class="min-w-0 flex-1 text-sm font-medium leading-relaxed text-teal-900"></p>
+      <button type="button" id="push-enable"
+              class="hidden shrink-0 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:opacity-60">
+        Ativar
+      </button>
+    </div>
 
     <section aria-labelledby="doses-hoje">
       <h2 id="doses-hoje" class="sr-only">Doses de hoje</h2>
@@ -158,39 +133,4 @@
     </section>
   </main>
 
-  {{!-- ==================== BOTTOM NAV (< md) ==================== --}}
-  <nav id="bottom-nav"
-       class="fixed bottom-0 left-0 z-20 w-full border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
-       aria-label="Navegação principal">
-    <ul class="grid grid-cols-3 items-end">
-      <li>
-        <a href="/doses/hoje" aria-current="page"
-           class="flex flex-col items-center gap-1 px-2 py-3 text-teal-600">
-          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /><path d="m9 16 2 2 4-4" />
-          </svg>
-          <span class="text-[11px] font-semibold">Hoje</span>
-        </a>
-      </li>
-
-      <li class="flex justify-center">
-        <a href="/medicamentos/novo" aria-label="Adicionar remédio"
-           class="-mt-8 flex h-16 w-16 items-center justify-center rounded-full bg-teal-600 text-white shadow-lg shadow-teal-600/30 ring-4 ring-slate-50 transition hover:bg-teal-700 active:bg-teal-800">
-          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </a>
-      </li>
-
-      <li>
-        <a href="/historico"
-           class="flex flex-col items-center gap-1 px-2 py-3 text-slate-400 transition hover:text-slate-600">
-          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 3v18h18" /><path d="M18.7 8 13 13.7l-3-3L7 14" />
-          </svg>
-          <span class="text-[11px] font-medium">Histórico</span>
-        </a>
-      </li>
-    </ul>
-  </nav>
 </div>

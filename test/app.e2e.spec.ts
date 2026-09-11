@@ -369,6 +369,236 @@ describe('Aplicação (e2e)', () => {
     });
   });
 
+  /**
+   * O que o NAVEGADOR recebe. Os testes acima exercitam o caminho do Service
+   * Worker (JSON); aqui o Accept é o de uma navegação real, e o esperado é
+   * outro: recarregar a página com a mensagem, nunca um corpo JSON na tela.
+   */
+  describe('respostas ao navegador', () => {
+    const flashOf = (res: request.Response): string | undefined => {
+      const cookie = getCookie(res, 'flash');
+      if (!cookie) return undefined;
+      return JSON.parse(decodeURIComponent(cookieValue(cookie))).message as string;
+    };
+
+    /** Repete a navegação seguinte ao redirect, levando o aviso pendente. */
+    const followWithFlash = (res: request.Response, session: Session, url: string) =>
+      request(http)
+        .get(url)
+        .set('Accept', 'text/html')
+        .set('Cookie', [...session.cookies, getCookie(res, 'flash') ?? '']);
+
+    it('confirma a dose pelo formulário e recarrega o dia com o aviso', async () => {
+      const screen = await request(http).get('/doses/hoje').set('Cookie', owner.cookies);
+      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(screen.text)![1];
+
+      const res = await request(http)
+        .post(`/doses/${doseId}/taken`)
+        .set('Cookie', owner.cookies)
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: owner.csrfToken })
+        .expect(303)
+        .expect('Location', '/doses/hoje');
+
+      // O objeto de redirect já chegou a ser serializado como JSON na tela.
+      expect(res.text).not.toContain('"statusCode"');
+      expect(flashOf(res)).toContain('Metformina');
+
+      const dia = await followWithFlash(res, owner, '/doses/hoje').expect(200);
+      expect(dia.text).toContain('id="toast"');
+      expect(dia.text).toContain('Metformina registrada como tomada.');
+    });
+
+    it('mostra o aviso uma vez só, e não no carregamento seguinte', async () => {
+      const res = await request(http)
+        .post('/medicamentos')
+        .set('Cookie', owner.cookies)
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({
+          _csrf: owner.csrfToken,
+          name: 'Dipirona',
+          dosage: '500 mg',
+          'times[]': ['09:00'],
+          startsOn: HOJE,
+          endsOn: '',
+        })
+        .expect(303);
+
+      const primeira = await followWithFlash(res, owner, '/doses/hoje').expect(200);
+      expect(primeira.text).toContain('Dipirona cadastrado');
+
+      const segunda = await request(http)
+        .get('/doses/hoje')
+        .set('Accept', 'text/html')
+        .set('Cookie', owner.cookies)
+        .expect(200);
+      expect(segunda.text).not.toContain('id="toast"');
+    });
+
+    it('devolve erro de validação como aviso na tela, não como JSON cru', async () => {
+      const res = await request(http)
+        .post('/medicamentos')
+        .set('Cookie', owner.cookies)
+        .set('Accept', 'text/html')
+        .set('Referer', '/medicamentos/novo')
+        .type('form')
+        .send({
+          _csrf: owner.csrfToken,
+          name: 'Sem horário',
+          dosage: '1 mg',
+          'times[]': ['', ''],
+          startsOn: HOJE,
+        })
+        .expect(303);
+
+      expect(res.text).not.toContain('Bad Request');
+      expect(flashOf(res)).toBe('Preencha ao menos um horário.');
+
+      const form = await followWithFlash(res, owner, '/medicamentos/novo').expect(200);
+      expect(form.text).toContain('Preencha ao menos um horário.');
+    });
+
+    it('avisa em vez de falhar ao registrar uma dose já respondida', async () => {
+      const screen = await request(http).get('/doses/hoje').set('Cookie', principal.cookies);
+      const doseId = /\/doses\/([0-9a-f-]{36})\/taken/.exec(screen.text)![1];
+
+      await request(http)
+        .post(`/doses/${doseId}/taken`)
+        .set('Cookie', principal.cookies)
+        .set('X-CSRF-Token', principal.csrfToken)
+        .set('Accept', 'application/json')
+        .expect(201);
+
+      const res = await request(http)
+        .post(`/doses/${doseId}/skipped`)
+        .set('Cookie', principal.cookies)
+        .set('Accept', 'text/html')
+        .type('form')
+        .send({ _csrf: principal.csrfToken })
+        .expect(303);
+
+      expect(flashOf(res)).toBe('Esta dose já foi tomada e não pode mais ser alterada.');
+    });
+
+    it('mantém o JSON para quem não pede HTML (Service Worker)', async () => {
+      const res = await request(http)
+        .post('/doses/11111111-1111-4111-8111-111111111111/taken')
+        .set('Cookie', principal.cookies)
+        .set('X-CSRF-Token', principal.csrfToken)
+        .set('Accept', 'application/json')
+        .expect(404);
+
+      expect(res.body).toMatchObject({ statusCode: 404, message: 'Dose não encontrada' });
+    });
+  });
+
+  describe('tela de remédios cadastrados', () => {
+    it('lista a posologia completa do usuário', async () => {
+      const res = await request(http)
+        .get('/medicamentos')
+        .set('Cookie', owner.cookies)
+        .expect(200);
+
+      expect(res.text).toContain('Metformina');
+      expect(res.text).toContain('850 mg');
+      expect(res.text).toContain('>21:00<');
+      expect(res.text).toContain('uso contínuo');
+      expect(res.text).toContain('<title>Meus remédios · Lembrete de Medicamentos</title>');
+    });
+
+    it('é alcançável pela navegação de todas as telas internas', async () => {
+      for (const rota of ['/doses/hoje', '/historico', '/medicamentos']) {
+        const res = await request(http).get(rota).set('Cookie', owner.cookies).expect(200);
+        expect(res.text).toContain('href="/medicamentos"');
+        expect(res.text).toContain('id="bottom-nav"');
+      }
+    });
+
+    it('não mostra remédio de outro usuário', async () => {
+      const res = await request(http)
+        .get('/medicamentos')
+        .set('Cookie', intruder.cookies)
+        .expect(200);
+
+      expect(res.text).not.toContain('Metformina');
+      expect(res.text).toContain('Nenhum remédio cadastrado');
+    });
+  });
+
+  /**
+   * O elo que faltava: o back-end despachava a dose no horário e nada chegava
+   * ao aparelho, porque nenhuma inscrição existia. Estes testes fixam o
+   * contrato entre `/js/push.js` e a rota — e a presença do próprio script.
+   */
+  describe('inscrição em notificações', () => {
+    const inscricao = (over: Record<string, string> = {}) => ({
+      endpoint: 'https://fcm.example/aparelho-do-adonis',
+      p256dh: 'BNc...chave-publica-do-navegador',
+      auth: 'segredo-de-autenticacao',
+      ...over,
+    });
+
+    it('entrega a chave VAPID pública que o navegador precisa', async () => {
+      const res = await request(http)
+        .get('/push/chave-publica')
+        .set('Cookie', principal.cookies)
+        .set('Accept', 'application/json')
+        .expect(200);
+
+      expect(typeof res.body.key).toBe('string');
+      expect(res.body.key.length).toBeGreaterThan(0);
+    });
+
+    it('aceita a inscrição no formato achatado que o cliente envia', async () => {
+      const res = await request(http)
+        .post('/push/inscrever')
+        .set('Cookie', principal.cookies)
+        .set('X-CSRF-Token', principal.csrfToken)
+        .set('Accept', 'application/json')
+        .send(inscricao())
+        .expect(201);
+
+      expect(typeof res.body.id).toBe('string');
+    });
+
+    // O navegador reinscreve a cada visita com o mesmo endpoint — que é único
+    // na tabela. Sem upsert, a segunda visita respondia 500.
+    it('aceita a reinscrição do mesmo aparelho', async () => {
+      await request(http)
+        .post('/push/inscrever')
+        .set('Cookie', principal.cookies)
+        .set('X-CSRF-Token', principal.csrfToken)
+        .set('Accept', 'application/json')
+        .send(inscricao({ p256dh: 'chave-renovada' }))
+        .expect(201);
+    });
+
+    it('exige sessão para inscrever um aparelho', async () => {
+      await request(http)
+        .post('/push/inscrever')
+        .set('Accept', 'application/json')
+        .send(inscricao())
+        .expect(403); // CSRF barra antes mesmo da sessão
+    });
+
+    it('serve o script que faz a inscrição, e o layout o carrega', async () => {
+      const js = await request(http).get('/js/push.js').expect(200);
+      expect(js.headers['content-type']).toContain('javascript');
+      expect(js.text).toContain('pushManager.subscribe');
+      expect(js.text).toContain('/push/inscrever');
+
+      const dashboard = await request(http)
+        .get('/doses/hoje')
+        .set('Cookie', principal.cookies)
+        .expect(200);
+      expect(dashboard.text).toContain('src="/js/push.js"');
+      expect(dashboard.text).toContain('id="push-banner"');
+      expect(dashboard.text).toContain('id="push-enable"');
+    });
+  });
+
   describe('rate limiting (ADR-001 §2.4)', () => {
     it('bloqueia tentativas repetidas de login com 429', async () => {
       const cookie = getCookie(await request(http).get('/login'), 'csrf_token')!;

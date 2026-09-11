@@ -34,7 +34,7 @@ export class AuthService {
   async register(dto: RegisterDto): Promise<Session> {
     const email = dto.email.trim().toLowerCase();
     if (await this.users.findOneBy({ email })) {
-      throw new ConflictException('E-mail já cadastrado');
+      throw new ConflictException('Este e-mail já está cadastrado.');
     }
 
     const user = await this.users.save(
@@ -58,7 +58,7 @@ export class AuthService {
     const hash = user?.passwordHash ?? (await this.throwawayHash());
     const matches = await bcrypt.compare(dto.password, hash);
 
-    if (!user || !matches) throw new UnauthorizedException('Credenciais inválidas');
+    if (!user || !matches) throw new UnauthorizedException('E-mail ou senha incorretos.');
     return this.openSession(user);
   }
 
@@ -74,14 +74,14 @@ export class AuthService {
     try {
       payload = await this.jwt.verifyAsync(token);
     } catch {
-      throw new UnauthorizedException('Sessão inválida ou expirada');
+      throw new UnauthorizedException('Sua sessão expirou. Entre novamente.');
     }
     if (payload.kind !== 'refresh') {
       throw new UnauthorizedException('Token de tipo inesperado');
     }
 
     const user = await this.users.findOneBy({ id: payload.sub });
-    if (!user) throw new UnauthorizedException('Sessão inválida ou expirada');
+    if (!user) throw new UnauthorizedException('Sua sessão expirou. Entre novamente.');
     return user;
   }
 

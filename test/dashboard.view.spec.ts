@@ -1,13 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import * as Handlebars from 'handlebars';
-import * as cheerio from 'cheerio';
-import { registerHbsHelpers } from '../src/common/hbs-helpers';
-
-const TEMPLATE = readFileSync(
-  join(__dirname, '..', 'views', 'dashboard.hbs'),
-  'utf8',
-);
+import { renderView } from './helpers/render';
 
 const CSRF = 'csrf-token-de-teste';
 
@@ -31,16 +22,13 @@ const dose = (over: Partial<Dose> = {}): Dose => ({
 });
 
 function render(model: Record<string, unknown> = {}) {
-  const hbs = Handlebars.create();
-  registerHbsHelpers(hbs);
-  const html = hbs.compile(TEMPLATE)({
+  return renderView('dashboard', {
     user: { name: 'Adonis' },
     currentDate: 'sábado, 30 de agosto',
     csrfToken: CSRF,
     doses: [dose()],
     ...model,
   });
-  return cheerio.load(html);
 }
 
 describe('dashboard.hbs', () => {
@@ -104,11 +92,19 @@ describe('dashboard.hbs', () => {
   });
 
   describe('bottom navigation', () => {
-    it('tem exatamente três itens: Hoje, FAB e Histórico', () => {
+    it('tem quatro itens: Hoje, Remédios, FAB e Histórico', () => {
       const $ = render();
-      expect($('#bottom-nav li')).toHaveLength(3);
+      expect($('#bottom-nav li')).toHaveLength(4);
       expect($('#bottom-nav a[href="/doses/hoje"]').text()).toContain('Hoje');
+      expect($('#bottom-nav a[href="/medicamentos"]').text()).toContain('Remédios');
       expect($('#bottom-nav a[href="/historico"]').text()).toContain('Histórico');
+    });
+
+    it('marca apenas a página corrente com aria-current', () => {
+      const $ = render();
+      const atual = $('#bottom-nav a[aria-current="page"]');
+      expect(atual).toHaveLength(1);
+      expect(atual.attr('href')).toBe('/doses/hoje');
     });
 
     it('destaca o FAB central deslocado para cima', () => {

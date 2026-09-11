@@ -4,7 +4,7 @@ import { DateTime } from 'luxon';
 import { Repository } from 'typeorm';
 import { Clock } from '../common/time/clock';
 import { DoseLog } from './dose-log.entity';
-import { DoseStatus, TERMINAL_STATUSES } from './dose-status.enum';
+import { DoseStatus, STATUS_LABELS, TERMINAL_STATUSES } from './dose-status.enum';
 
 /** Modelo de view consumido por `views/dashboard.hbs`. */
 export interface DoseView {
@@ -136,7 +136,7 @@ export class DosesService {
     if (dose.status === status) return dose;
     if (TERMINAL_STATUSES.includes(dose.status)) {
       throw new ConflictException(
-        `Esta dose já foi registrada como ${dose.status}`,
+        `Esta dose já foi ${STATUS_LABELS[dose.status]} e não pode mais ser alterada.`,
       );
     }
 

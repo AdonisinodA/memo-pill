@@ -27,7 +27,7 @@ export class SessionGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request>();
     const token = req.cookies?.[REFRESH_COOKIE] as string | undefined;
-    if (!token) throw new UnauthorizedException('Sessão ausente');
+    if (!token) throw new UnauthorizedException('Sua sessão expirou. Entre novamente.');
 
     req.user = await this.auth.userFromToken(token);
     return true;

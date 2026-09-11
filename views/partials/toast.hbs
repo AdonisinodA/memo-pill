@@ -1,0 +1,39 @@
+{{!--
+  Toast de mensagem vinda do servidor (erro de validação, conflito, confirmação).
+  Renderizado pelo layout a partir de `res.locals.flash`, preenchido pelo
+  FlashMiddleware — por isso vale em qualquer página, sem o controller repassar.
+  O fechamento fica em /js/app.js: a CSP proíbe handler inline (ADR-001 §2.4).
+--}}
+{{#if flash}}
+  <div id="toast"
+       role="{{#if (eq flash.type "error")}}alert{{else}}status{{/if}}"
+       aria-live="{{#if (eq flash.type "error")}}assertive{{else}}polite{{/if}}"
+       class="fixed inset-x-4 top-4 z-50 flex items-start gap-3 rounded-2xl border p-4 shadow-lg transition-opacity duration-300 md:left-auto md:right-6 md:top-6 md:w-96
+              {{#if (eq flash.type "error")}}border-red-200 bg-red-50 text-red-800{{else if (eq flash.type "success")}}border-teal-200 bg-teal-50 text-teal-800{{else}}border-slate-200 bg-white text-slate-700{{/if}}">
+
+    <span class="mt-0.5 shrink-0">
+      {{#if (eq flash.type "error")}}
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><path d="M12 8v5M12 16.5h.01" />
+        </svg>
+      {{else if (eq flash.type "success")}}
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><path d="m8 12 3 3 5-6" />
+        </svg>
+      {{else}}
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><path d="M12 16v-5M12 7.5h.01" />
+        </svg>
+      {{/if}}
+    </span>
+
+    <p class="min-w-0 flex-1 text-sm font-medium leading-relaxed">{{flash.message}}</p>
+
+    <button type="button" id="toast-close" aria-label="Fechar aviso"
+            class="-m-1 shrink-0 rounded-lg p-1 opacity-60 transition hover:opacity-100">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+        <path d="M18 6 6 18M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+{{/if}}

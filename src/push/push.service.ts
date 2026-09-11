@@ -29,13 +29,21 @@ export class PushService {
     @Inject(SLEEP) private readonly sleep: Sleep,
   ) {}
 
-  subscribe(
+  /**
+   * Registra a inscrição do navegador, sobrescrevendo a que já existir para o
+   * mesmo `endpoint`.
+   *
+   * O navegador reinscreve a cada visita e devolve o mesmo endpoint — sem o
+   * upsert, a segunda visita esbarraria no índice único e a inscrição viraria
+   * um 500. A troca de dono é intencional: num aparelho compartilhado, os
+   * lembretes passam a ser de quem entrou por último, e não dos dois.
+   */
+  async subscribe(
     userId: string,
     data: { endpoint: string; p256dh: string; auth: string },
   ): Promise<PushSubscription> {
-    return this.subscriptions.save(
-      this.subscriptions.create({ userId, ...data }),
-    );
+    await this.subscriptions.upsert({ userId, ...data }, ['endpoint']);
+    return this.subscriptions.findOneByOrFail({ endpoint: data.endpoint });
   }
 
   /**

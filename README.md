@@ -84,6 +84,30 @@ TLS — mas **não** funciona se você acessar a aplicação pelo IP da máquina
 rede (`http://192.168.x.x`). Para testar em um celular, use um túnel HTTPS ou
 o ambiente de produção.
 
+**A inscrição não é automática.** O aparelho só passa a receber lembretes
+depois que o usuário toca em **Ativar** no banner do topo de `/doses/hoje`:
+`public/js/push.js` pede a permissão (os navegadores só aceitam
+`Notification.requestPermission()` a partir de um gesto do usuário), assina no
+`pushManager` com a chave VAPID de `/push/chave-publica` e registra o resultado
+em `/push/inscrever`. Sem essa inscrição o agendador dispara no horário e
+`notifyDose` percorre uma lista vazia — a dose fica com `notified_at`
+preenchido e nada chega ao celular. É por isso que `dispatchDue` emite um
+`warn` quando uma dose despachada não alcança nenhum aparelho.
+
+Roteiro de teste local:
+
+1. Abra `http://localhost:3000/doses/hoje`, toque em **Ativar** e conceda a
+   permissão.
+2. Cadastre um remédio com horário 2 minutos à frente — o agendador roda a cada
+   minuto e a janela de tolerância é de 30 min (`TOLERANCE_WINDOW_SEC`).
+3. Uma dose só é despachada **uma vez**: `notified_at` é o claim. Para repetir o
+   teste, cadastre outra dose em vez de reaproveitar a mesma.
+4. Alterou `sw.js`? Um recarregamento basta: o Service Worker chama
+   `skipWaiting()` no `install` e `clients.claim()` no `activate`, então a
+   versão nova assume na hora. Sem isso ele ficaria em `waiting` enquanto
+   houvesse aba aberta — e como é o SW que monta a notificação, a correção só
+   chegaria ao usuário depois de fechar o app inteiro.
+
 ## Como subir em produção
 
 A infraestrutura-alvo é uma VPS Linux com PM2, Nginx e Certbot (ADR-001 §2.5).
@@ -163,11 +187,29 @@ Os testes não tocam o banco de desenvolvimento nem exigem `.env`.
 | `POST` | `/doses/:id/taken`, `/doses/:id/skipped` | Registro de adesão |
 | `GET` | `/doses/:id/resumo` | JSON consumido pelo Service Worker |
 | `GET` | `/historico` | Histórico de adesão |
-| `GET` | `/medicamentos`, `/medicamentos/novo` | Lista e cadastro |
+| `GET` | `/medicamentos` | Remédios cadastrados, com posologia e situação |
+| `GET` | `/medicamentos/novo` | Formulário de cadastro |
 | `POST` | `/medicamentos`, `/medicamentos/:id/remover` | Criação e soft delete |
 | `GET` | `/push/chave-publica` | Chave VAPID pública para o cliente |
 | `POST` | `/push/inscrever` | Registro da inscrição push |
 | `GET` | `/csrf` | Token para requisições do cliente |
+
+### Erros e avisos na tela
+
+A mesma rota atende o navegador e o Service Worker, e o erro precisa chegar de
+forma diferente a cada um. Quem manda `Accept: text/html` é tratado como
+navegação; o resto recebe JSON com o status original.
+
+| Situação | Navegador | Service Worker / API |
+|---|---|---|
+| POST com erro (validação, conflito, CSRF) | 303 de volta à página de origem, com a mensagem em um toast | JSON com o status da exceção |
+| POST bem-sucedido | 303 com toast de confirmação | JSON `{ id, status }` |
+| GET com erro | página `error.hbs` — redirecionar levaria de volta à página que falhou | JSON |
+| Sessão ausente | redirect para `/login` | 401 |
+
+O transporte é um cookie de uso único (`flash`, `HttpOnly`, 60s), lido e apagado
+pelo `FlashMiddleware`, que o entrega ao layout em `res.locals`. Por isso o
+toast funciona em qualquer tela sem que o controller precise repassá-lo.
 
 ## Segurança — OWASP Top 10 (2021)
 
@@ -207,8 +249,11 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   `:132`). Trocar o UUID na URL não alcança dado alheio.
 - **`ParseUUIDPipe`** em todo `:id`, o que rejeita a entrada malformada antes
   de ela chegar ao serviço.
-- O redirect de sessão ausente é tratado por `UnauthenticatedFilter`: navegação
-  vai para `/login`, chamada de API recebe 401 — sem vazar HTML de erro.
+- O redirect de sessão ausente é tratado por `HttpErrorFilter`: navegação vai
+  para `/login`, chamada de API recebe 401 — sem vazar HTML de erro. O mesmo
+  filtro só devolve o corpo de exceções `HttpException` (mensagens escritas
+  pela aplicação); erro inesperado vira 500 genérico, para que `stack` e
+  mensagem do SQLite não cheguem ao cliente.
 
 ### A02 — Cryptographic Failures
 
@@ -398,7 +443,7 @@ Identificadores, nomes de arquivo, colunas do banco e campos de formulário em
 ```
 src/
   auth/          cadastro, login, refresh, guard de sessão
-  common/        relógio injetável, CSRF, helpers de view
+  common/        relógio injetável, CSRF, flash/toast, filtro de erro, helpers de view
   config/        leitura e validação de variáveis de ambiente
   database/      PRAGMAs do SQLite, data source e migrations
   doses/         geração, agendador (cron), registro de adesão, histórico
@@ -406,8 +451,9 @@ src/
   push/          inscrições e entrega Web Push
   users/         entidade de usuário
   configure-app.ts   Express, Helmet/CSP e view engine — compartilhado com o e2e
-views/           dashboard, login, medications, medication-new, history
-public/          Service Worker, manifest, CSS compilado e ícones
+views/           dashboard, login, medications, medication-new, history, error
+  partials/      nav (sidebar + barra inferior) e toast, usados pelo layout
+public/          Service Worker, inscrição push, manifest, CSS compilado e ícones
 test/            e2e e renderização de view
 ```
 
