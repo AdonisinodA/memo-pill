@@ -133,7 +133,8 @@ dev (Claude Code) ──push──▶ GitHub (repo público) ──Actions──
 | Acesso remoto | só chave SSH; senha e root desligados | `deploy/ssh/00-hardening.conf` |
 | Firewall | NSG da Azure + UFW: entrada apenas 22, 80, 443 | `deploy/setup-server.sh` |
 | Força bruta no SSH | Fail2Ban, `maxretry = 4`, `bantime = 24h` | `deploy/fail2ban/jail.local` |
-| TLS | Certbot ≥ 5.4 (snap), certificado Let's Encrypt **para o IP**, renovação automática | `deploy/setup-server.sh` |
+| Endereços | **https://memo-pill.duckdns.org** (domínio gratuito do DuckDNS) e **https://104.45.200.218** (IP) | `deploy/nginx/memo-pill.conf` |
+| TLS | Certbot ≥ 5.4 (snap): certificado Let's Encrypt **para o IP** (6 dias) e **para o domínio** (90 dias), ambos com renovação automática; o Nginx escolhe pelo SNI | `deploy/setup-server.sh` |
 | HTTP → HTTPS | `return 301` na porta 80 (exceto o desafio ACME) | `deploy/nginx/memo-pill.conf` |
 | PQC | `ssl_ecdh_curve X25519MLKEM768:...` | `deploy/nginx/memo-pill.conf` |
 
@@ -156,7 +157,14 @@ confere a versão do OpenSSL da imagem e aborta se for inferior a 3.5.
   argumentos — ele baixa a imagem mais recente e recria o container, sem
   reemitir o certificado nem sobrescrever o `.env`.
 
-**Por que certificado de curta duração:** a Let's Encrypt só emite certificado
+**Por que IP e domínio ao mesmo tempo:** o domínio não é exigido, mas dá um
+endereço legível e um certificado de 90 dias, e permite o teste do Qualys SSL
+Labs. O acesso por IP continua de pé com o próprio certificado — se o DuckDNS
+ficar fora do ar, o site segue acessível. As diretivas de TLS (protocolos,
+grupos com PQC, cifras) ficam no nível `http {}` do Nginx, então os dois
+endereços têm exatamente a mesma configuração criptográfica.
+
+**Por que certificado de curta duração (IP):** a Let's Encrypt só emite certificado
 para endereço IP no perfil `shortlived` (~6 dias). A renovação automática deixa
 de ser conveniência e passa a ser o que mantém o site no ar; o timer do snap do
 Certbot roda duas vezes ao dia e o `--deploy-hook` recarrega o Nginx.
@@ -175,8 +183,11 @@ Certbot roda duas vezes ao dia e o `--deploy-hook` recarrega o Nginx.
    ```bash
    scp -r deploy azureuser@<IP>:~/
    ssh azureuser@<IP>
-   sudo bash ~/deploy/setup-server.sh <IP> <seu-email> "$(cat ~/.ssh/memo-pill-deploy.pub)"
+   sudo bash ~/deploy/setup-server.sh <IP> <seu-email> "$(cat ~/.ssh/memo-pill-deploy.pub)" [dominio]
    ```
+   O quarto argumento é opcional: com um domínio já apontando para o IP (ex.:
+   `memo-pill.duckdns.org`), o script emite também o certificado dele e ativa o
+   bloco do domínio no Nginx.
    O script instala pacotes, endurece o SSH, liga UFW e Fail2Ban, instala
    Docker, Node 22 e PM2, cria o usuário `deploy`, **gera o `.env` com segredos na
    própria VM** (JWT e VAPID nunca passam pelo GitHub), emite o certificado e
@@ -196,7 +207,29 @@ Certbot roda duas vezes ao dia e o `--deploy-hook` recarrega o Nginx.
 
 #### Evidências de conformidade
 
-Aplicação no ar em **https://104.45.200.218** (testes de 26/09/2026).
+Aplicação no ar em **https://memo-pill.duckdns.org** e **https://104.45.200.218**
+(testes de 26–27/09/2026). O documento define um teste para cada forma de
+acesso; como as duas estão ativas, as duas foram testadas.
+
+**Domínio — [Qualys SSL Labs](https://www.ssllabs.com/ssltest/analyze.html?d=memo-pill.duckdns.org).**
+Nota **A+** (o critério pede A). Suporte a PQC detectado: o grupo
+`X25519MLKEM768` aparece classificado como `PQC` entre os grupos de troca de
+chaves (*This server supports PQC (Post-Quantum Cryptography) key exchange*).
+Também: apenas TLS 1.2 e 1.3, forward secrecy em todas as suítes, só cifras
+AEAD, HSTS de 1 ano, certificado ECDSA P-256 da Let's Encrypt.
+
+| Item do SSL Labs | Resultado |
+|---|---|
+| Nota | A+ |
+| Protocolos | TLS 1.2, TLS 1.3 |
+| Grupos de troca de chaves | `X25519MLKEM768` (PQC), `x25519`, `secp256r1`, `secp384r1` |
+| Suítes TLS 1.2 | ECDHE-ECDSA com AES-GCM e ChaCha20-Poly1305 |
+| HSTS | presente, `max-age=31536000` |
+
+![Qualys SSL Labs — nota A+ e PQC](docs/evidencias/ssllabs.png)
+
+**IP — critérios do acesso por IP** (abaixo).
+
 
 **SSL/TLS — [ssl.org](https://www.ssl.org/).** *Certificate Trusted: **Yes*** e
 *Algorithm / Key Type & Size: **Good signature · Good key*** (ECDSA P-256,

@@ -41,8 +41,9 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
   -keyout "$WORK/letsencrypt/live/127.0.0.1/privkey.pem" \
   -out "$WORK/letsencrypt/live/127.0.0.1/fullchain.pem" 2>/dev/null
 chmod 644 "$WORK/letsencrypt/live/127.0.0.1/privkey.pem"
-sed "s/__PUBLIC_IP__/127.0.0.1/g" "$ROOT/deploy/nginx/memo-pill.conf" \
-  > "$WORK/nginx/memo-pill.conf"
+# Sem domínio no teste local: o bloco do domínio sai, como no setup-server.sh.
+sed -e "s/__PUBLIC_IP__/127.0.0.1/g" -e '/# BEGIN DOMAIN/,/# END DOMAIN/d' \
+  "$ROOT/deploy/nginx/memo-pill.conf" > "$WORK/nginx/memo-pill.conf"
 
 step "Subindo os containers"
 "${COMPOSE[@]}" up -d --build
