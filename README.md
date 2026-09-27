@@ -63,6 +63,7 @@ criados automaticamente.
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `PORT` | não | Porta HTTP (padrão 3000) |
+| `HOST` | não | Interface de escuta (padrão: todas). Em produção o `ecosystem.config.js` fixa `127.0.0.1` |
 | `DATABASE_PATH` | não | Arquivo SQLite (padrão `data/app.db`) |
 | `JWT_SECRET` | **sim** | Segredo de assinatura dos tokens de sessão |
 | `VAPID_PUBLIC_KEY` | **sim** | Chave pública VAPID |
@@ -274,7 +275,7 @@ deploy/local-test/run.sh down   # derruba e apaga os temporários
 Sobe um "servidor" **Debian 12** com sshd endurecido, Node 22 e PM2, e o
 **mesmo Nginx em container** da produção compartilhando a rede dele. Publica
 com o **mesmo `deploy/deploy.sh`** que o GitHub Actions usa (duas vezes, para
-exercitar o redeploy) e roda 17 verificações: `.env` e banco preservados,
+exercitar o redeploy) e roda 18 verificações: `.env` e banco preservados, app só no loopback,
 migrations no boot, PM2 em fork, SSH sem senha e sem root, 301 para HTTPS,
 HSTS/CSP, **handshake com `X25519MLKEM768`**, fallback clássico, TLS 1.1
 recusado e rate limit por cliente atrás do proxy — este último validado por

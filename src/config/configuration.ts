@@ -1,5 +1,7 @@
 export interface AppConfig {
   port: number;
+  /** Interface de escuta; sem valor, todas. Em produção, só o loopback. */
+  host?: string;
   databasePath: string;
   jwt: { secret: string };
   throttle: { general: number; strict: number };
@@ -12,6 +14,7 @@ export interface AppConfig {
  */
 export const configuration = (): AppConfig => ({
   port: Number(process.env.PORT ?? 3000),
+  host: process.env.HOST || undefined,
   databasePath: process.env.DATABASE_PATH ?? 'data/app.db',
   jwt: { secret: required('JWT_SECRET') },
   throttle: {
