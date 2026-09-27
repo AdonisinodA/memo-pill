@@ -8,19 +8,14 @@
 #                    do servidor em vez de aceitar qualquer host (sem MITM no deploy)
 name: CI/CD
 
+# Push em qualquer branch roda os testes; o deploy é só da main (ver job deploy).
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 permissions:
   contents: read
-
-# Dois pushes seguidos não publicam ao mesmo tempo; o mais novo espera.
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
 
 jobs:
   test:
@@ -54,6 +49,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
+    # Dois pushes seguidos não publicam ao mesmo tempo; o mais novo espera.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@v4
         with:
