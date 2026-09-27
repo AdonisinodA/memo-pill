@@ -195,12 +195,74 @@ Certbot roda duas vezes ao dia e o `--deploy-hook` recarrega o Nginx.
 
 #### Evidências de conformidade
 
-- [ssl.org](https://www.ssl.org/) com o IP: *Certificate Trusted: YES* e
-  *Good signature · Acceptable key* — `docs/evidencias/ssl-org.png`.
-- [DigiCert PQC checker](https://www.digicert.com/pqc-checker): suporte a
-  PQC ativo — `docs/evidencias/digicert-pqc.png`.
-- `fail2ban-client status sshd`, `ufw status verbose` e `certbot renew --dry-run`
-  — saídas no final do `setup-server.sh`.
+Aplicação no ar em **https://104.45.200.218** (testes de 26/09/2026).
+
+**SSL/TLS — [ssl.org](https://www.ssl.org/).** *Certificate Trusted: **Yes*** e
+*Algorithm / Key Type & Size: **Good signature · Good key*** (ECDSA P-256,
+SHA-384). O critério pede "Acceptable key"; "Good key" é a classificação acima
+dela. Também: cadeia válida e completa, Certificate Transparency em
+conformidade, apenas TLS 1.2 e 1.3, certificado Let's Encrypt emitido para o IP
+(validade de 6 dias, renovação automática).
+
+![ssl.org — Certificate Trusted: Yes, Good signature · Good key](docs/evidencias/ssl-org.png)
+
+**PQC — [DigiCert TLS quantum readiness check](https://www.digicert.com/pqc-checker).**
+**Pass** nos dois itens: TLS 1.3 habilitado e troca de chaves quantum-safe
+(`X25519MLKEM768`). Conferido também pela linha de comando, com OpenSSL 3.5+:
+
+```
+$ openssl s_client -connect 104.45.200.218:443 -groups X25519MLKEM768
+Negotiated TLS1.3 group: X25519MLKEM768
+Protocol: TLSv1.3
+```
+
+![DigiCert — Pass: TLS 1.3 e quantum-safe key exchange](docs/evidencias/digicert-pqc.png)
+
+**Superfície exposta** (varredura externa): apenas 22, 80 e 443 abertas; a
+porta da aplicação (3000) fechada. HTTP responde `301` para HTTPS.
+
+**Na VM** (Debian 12, saídas de 27/09/2026):
+
+```
+$ sudo fail2ban-client status sshd
+Status for the jail: sshd
+|- Filter
+|  `- Journal matches:  _SYSTEMD_UNIT=sshd.service + _COMM=sshd
+`- Actions
+   |- Currently banned: 0
+   `- Total banned:     0
+
+$ sudo ufw status verbose
+Status: active
+Default: deny (incoming), allow (outgoing), deny (routed)
+22/tcp                     ALLOW IN    Anywhere
+80/tcp                     ALLOW IN    Anywhere
+443/tcp                    ALLOW IN    Anywhere
+
+$ sudo sshd -T | grep -E 'passwordauth|permitroot|pubkeyauth'
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication no
+
+$ sudo certbot --version && sudo certbot renew --dry-run
+certbot 5.8.0
+Congratulations, all simulated renewals succeeded
+
+$ systemctl list-timers | grep certbot        # renovação 2x ao dia
+snap.certbot.renew.timer   snap.certbot.renew.service
+
+$ sudo docker exec nginx nginx -V 2>&1 | grep -o 'OpenSSL [0-9.]*'
+OpenSSL 3.5.8                                 # PQC; o OpenSSL do Debian 12 é 3.0
+```
+
+As duas primeiras simulações de renovação, feitas minutos depois da emissão,
+falharam na finalização do pedido (`authorizations for these identifiers not
+valid`), embora o desafio http-01 tivesse sido validado. As quatro seguintes,
+sem nenhuma mudança de configuração, passaram — tanto `certbot renew` quanto a
+emissão explícita com `--ip-address`. Os pedidos das execuções com falha e com
+sucesso são idênticos (perfil `shortlived`, identificador `ip`, CSR com
+`IP Address`), o que aponta para instabilidade passageira do lado da ACME. Por
+cautela, a data de validade é conferida após a primeira renovação real.
 
 #### Teste local da produção (antes de ir para a Azure)
 
