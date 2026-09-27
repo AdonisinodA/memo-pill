@@ -108,6 +108,9 @@ check "PM2 com o processo online, em fork, 1 instância" \
     const p = l.filter(x => x.name === \"lembrete-medicamentos\");
     process.exit(p.length === 1 && p[0].pm2_env.status === \"online\" && p[0].pm2_env.exec_mode === \"fork_mode\" ? 0 : 1)'"
 
+check "porta 3000 inacessível de fora do servidor (app só no loopback)" bash -c "
+  ! ${COMPOSE[*]} exec -T outsider curl -s -m 5 -o /dev/null http://server:3000/login"
+
 echo "SSH"
 check "login por senha recusado (só publickey é oferecido)" bash -c "
   out=\$(ssh -F $WORK/ssh_config -o BatchMode=yes -o PubkeyAuthentication=no \

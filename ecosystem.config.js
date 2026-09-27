@@ -14,7 +14,9 @@ module.exports = {
       exec_mode: 'fork',
       instances: 1,
       max_memory_restart: '400M',
-      env: { NODE_ENV: 'production' },
+      // Só o Nginx, na mesma máquina, fala com a aplicação: fora do loopback a
+      // porta 3000 não existe, mesmo que o firewall falhe.
+      env: { NODE_ENV: 'production', HOST: '127.0.0.1' },
     },
   ],
 };

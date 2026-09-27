@@ -21,8 +21,9 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = config.getOrThrow<number>('port');
-  await app.listen(port);
-  new Logger('bootstrap').log(`Ouvindo em http://localhost:${port}`);
+  const host = config.get<string>('host');
+  await (host ? app.listen(port, host) : app.listen(port));
+  new Logger('bootstrap').log(`Ouvindo em http://${host ?? 'localhost'}:${port}`);
 }
 
 void bootstrap();
