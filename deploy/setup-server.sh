@@ -8,7 +8,10 @@
 # Uso, a partir da sua máquina:
 #   scp -r deploy azureuser@<IP>:~/
 #   ssh azureuser@<IP>
-#   sudo bash ~/deploy/setup-server.sh <IP_PUBLICO> <EMAIL> "<CHAVE_PUBLICA_DO_PIPELINE>"
+#   sudo bash ~/deploy/setup-server.sh <IP_PUBLICO> <EMAIL> "<CHAVE_PUBLICA_DO_PIPELINE>" [DOMINIO]
+#
+# DOMINIO é opcional (ex.: memo-pill.duckdns.org, já apontando para o IP). Com
+# ele, o site responde pelos dois endereços, cada um com o próprio certificado.
 #
 # Antes de rodar, confirme que você entra na VM pela SUA chave SSH: este script
 # desliga o login por senha.
@@ -17,6 +20,7 @@ set -euo pipefail
 PUBLIC_IP="${1:?informe o IP público}"
 EMAIL="${2:?informe o e-mail para a Let’s Encrypt}"
 DEPLOY_PUBKEY="${3:?informe a chave pública (ed25519) do GitHub Actions}"
+DOMAIN="${4:-}"
 
 APP_DIR=/opt/memo-pill
 NGINX_IMAGE="${NGINX_IMAGE:-nginx:mainline-alpine}"
@@ -156,9 +160,25 @@ if [[ ! -d "/etc/letsencrypt/live/$PUBLIC_IP" ]]; then
     --deploy-hook "docker exec nginx nginx -s reload"
 fi
 
+if [[ -n "$DOMAIN" ]]; then
+  step "Certificado Let's Encrypt para $DOMAIN"
+  # Perfil padrão (90 dias): domínio não precisa do shortlived.
+  if [[ ! -d "/etc/letsencrypt/live/$DOMAIN" ]]; then
+    certbot certonly --non-interactive --agree-tos -m "$EMAIL" \
+      --webroot -w /var/www/certbot \
+      -d "$DOMAIN" \
+      --deploy-hook "docker exec nginx nginx -s reload"
+  fi
+fi
+
 step "Nginx definitivo (HTTPS + redirecionamento + PQC)"
-sed "s/__PUBLIC_IP__/$PUBLIC_IP/g" "$HERE/nginx/memo-pill.conf" \
-  > "$NGINX_CONF_DIR/memo-pill.conf"
+if [[ -n "$DOMAIN" ]]; then
+  sed -e "s/__PUBLIC_IP__/$PUBLIC_IP/g" -e "s/__DOMAIN__/$DOMAIN/g" \
+    "$HERE/nginx/memo-pill.conf" > "$NGINX_CONF_DIR/memo-pill.conf"
+else
+  sed -e "s/__PUBLIC_IP__/$PUBLIC_IP/g" -e '/# BEGIN DOMAIN/,/# END DOMAIN/d' \
+    "$HERE/nginx/memo-pill.conf" > "$NGINX_CONF_DIR/memo-pill.conf"
+fi
 docker exec nginx nginx -t
 docker exec nginx nginx -s reload
 
