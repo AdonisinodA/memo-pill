@@ -22,6 +22,16 @@
     'PushManager' in window &&
     'Notification' in window;
 
+  // No iPhone/iPad (iOS 16.4+), Web Push só existe no app instalado na Tela
+  // de Início; numa aba — do Safari ou de qualquer navegador, todos WebKit —
+  // PushManager nem aparece. O iPadOS se apresenta como Mac, daí o toque.
+  const IOS =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const INSTALADO =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    navigator.standalone === true;
+
   function mostrar(mensagem, comBotao) {
     texto.textContent = mensagem;
     botao.classList.toggle('hidden', !comBotao);
@@ -106,7 +116,13 @@
 
   async function iniciar() {
     if (!SUPORTADO) {
-      mostrar('Este navegador não suporta notificações. Abra o app pelo celular para receber os lembretes.', false);
+      if (IOS && !INSTALADO) {
+        mostrar('No iPhone e no iPad, os lembretes só funcionam com o app instalado: toque em Compartilhar e em "Adicionar à Tela de Início", depois abra o Lembrete pelo ícone e ative aqui.', false);
+      } else if (IOS) {
+        mostrar('Este aparelho não suporta notificações. Atualize para o iOS 16.4 ou mais recente para receber os lembretes.', false);
+      } else {
+        mostrar('Este navegador não suporta notificações. Use o Chrome, o Edge, o Firefox ou o Safari atualizado para receber os lembretes.', false);
+      }
       return;
     }
     if (Notification.permission === 'denied') {
