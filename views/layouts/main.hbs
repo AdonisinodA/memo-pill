@@ -8,6 +8,10 @@
   {{!-- PWA: exigido para instalação na tela inicial e Web Push (ADR-001 §2.1) --}}
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0d9488">
+  {{!-- O iOS ignora os ícones do manifest na Tela de Início: sem este PNG
+       (quadrado, opaco — o sistema arredonda), usa um print da página. --}}
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Lembrete">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
