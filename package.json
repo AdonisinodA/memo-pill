@@ -9,6 +9,7 @@
     "test:cov": "jest --coverage",
     "build:css": "tailwindcss -i src/assets/app.css -o public/css/app.css --minify",
     "watch:css": "tailwindcss -i src/assets/app.css -o public/css/app.css --watch",
+    "prebuild": "node -e \"for (const p of ['dist', 'tsconfig.build.tsbuildinfo']) require('fs').rmSync(p, { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.build.json && npm run build:css",
     "start": "node dist/main.js",
     "dev": "nest start --watch",

@@ -6,3 +6,6 @@ coverage/
 *.db
 *.db-wal
 *.db-shm
+
+# teste local do deploy (chaves e certificado temporários)
+deploy/local-test/.work/

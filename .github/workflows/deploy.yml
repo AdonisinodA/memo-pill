@@ -1,0 +1,78 @@
+# CI/CD: todo push na main é testado, compilado e publicado na VM da Azure.
+#
+# Secrets exigidos (Settings → Secrets and variables → Actions):
+#   SSH_HOST         IP público da VM
+#   SSH_USER         usuário de deploy na VM (o `deploy` criado por deploy/setup-server.sh)
+#   SSH_PRIVATE_KEY  chave privada ed25519 exclusiva do pipeline
+#   SSH_KNOWN_HOSTS  saída de `ssh-keyscan -t ed25519 <IP>` — fixa a identidade
+#                    do servidor em vez de aceitar qualquer host (sem MITM no deploy)
+name: CI/CD
+
+# Push em qualquer branch roda os testes; o deploy é só da main (ver job deploy).
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=critical
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          retention-days: 7
+          path: |
+            dist/
+            public/
+            views/
+            package.json
+            package-lock.json
+            ecosystem.config.js
+            deploy/deploy.sh
+
+  deploy:
+    needs: test
+    # PR só testa; publicar é exclusivo do push na main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    # Dois pushes seguidos não publicam ao mesmo tempo; o mais novo espera.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+
+      - name: Configurar SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host prod
+            HostName ${{ secrets.SSH_HOST }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+
+      # rsync + npm ci + pm2 + verificação — o mesmo script do teste local.
+      - name: Publicar
+        run: bash deploy/deploy.sh prod
