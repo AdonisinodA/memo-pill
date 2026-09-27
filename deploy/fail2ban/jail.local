@@ -1,0 +1,14 @@
+# /etc/fail2ban/jail.local — proteção da porta 22.
+# Requisito: tolerância de 4 erros e banimento por 24 horas.
+[DEFAULT]
+# O Debian 12 não traz rsyslog nas imagens de nuvem, então não há /var/log/auth.log:
+# a leitura vem do journal do systemd.
+backend  = systemd
+banaction = ufw
+
+[sshd]
+enabled  = true
+port     = 22
+maxretry = 4
+findtime = 10m
+bantime  = 24h

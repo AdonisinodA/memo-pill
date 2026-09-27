@@ -108,42 +108,164 @@ Roteiro de teste local:
    houvesse aba aberta — e como é o SW que monta a notificação, a correção só
    chegaria ao usuário depois de fechar o app inteiro.
 
-## Como subir em produção
+## Como subir em produção (Azure + GitHub Actions)
 
-A infraestrutura-alvo é uma VPS Linux com PM2, Nginx e Certbot (ADR-001 §2.5).
+Três eixos ligados por uma esteira automatizada: o código sai da máquina de
+desenvolvimento, vai para o GitHub e o **GitHub Actions** publica na VM da
+Azure a cada `git push origin main`. Nenhum passo de deploy é manual depois do
+provisionamento inicial.
 
-```bash
-# Na VPS, no diretório do projeto
-npm ci
-cp .env.example .env    # preencha os segredos de produção
-npm run build           # compila TypeScript (-> dist/) e o CSS minificado
-
-NODE_ENV=production pm2 start dist/main.js \
-  --name lembrete-medicamentos \
-  --exec-mode fork -i 1
-
-pm2 save
-pm2 startup             # habilita o restart no boot da máquina
+```
+dev (Claude Code) ──push──▶ GitHub (repo público) ──Actions──▶ VM Azure (Nginx + PM2)
+                                 │                                 ▲
+                                 └─ npm ci · audit · test · build ─┘ rsync + ssh
 ```
 
-Pontos que não são opcionais:
+### Eixo 1 — Infraestrutura
 
-- **`NODE_ENV=production` é obrigatório.** É essa variável que troca
-  `synchronize` por `migrationsRun`: com ela, as migrations versionadas de
-  `dist/database/migrations/` são aplicadas no boot; sem ela, o TypeORM
-  sincroniza o schema a partir das entidades — comportamento aceitável em
-  desenvolvimento e inaceitável sobre dados reais. Ela também liga o HSTS e o
-  `upgrade-insecure-requests` na CSP.
-- **`--exec-mode fork -i 1`.** O agendador roda dentro do processo. Em cluster
-  mode, cada dose seria notificada N vezes (uma por worker).
-- **HTTPS de verdade.** O Service Worker e a Web Push API só funcionam sob TLS
-  fora do localhost. O Nginx termina o TLS (Certbot/Let's Encrypt) e faz proxy
-  para `localhost:3000`; a porta da aplicação fica fechada no UFW, que expõe
-  apenas 22, 80 e 443.
+| Item | Escolha | Onde está |
+|---|---|---|
+| Provedor | Microsoft Azure, conta gratuita (VM B1s / B2ats v2, 750 h/mês) | portal da Azure |
+| Sistema operacional | **Debian 12 (bookworm)** | imagem da VM |
+| Web server | Nginx (container `nginx:alpine`, rede do host) como proxy reverso para `127.0.0.1:3000` | `deploy/nginx/memo-pill.conf`, `deploy/setup-server.sh` |
+| Processo | PM2, 1 instância em fork, sobe no boot | `ecosystem.config.js` |
+| Acesso remoto | só chave SSH; senha e root desligados | `deploy/ssh/00-hardening.conf` |
+| Firewall | NSG da Azure + UFW: entrada apenas 22, 80, 443 | `deploy/setup-server.sh` |
+| Força bruta no SSH | Fail2Ban, `maxretry = 4`, `bantime = 24h` | `deploy/fail2ban/jail.local` |
+| TLS | Certbot ≥ 5.4 (snap), certificado Let's Encrypt **para o IP**, renovação automática | `deploy/setup-server.sh` |
+| HTTP → HTTPS | `return 301` na porta 80 (exceto o desafio ACME) | `deploy/nginx/memo-pill.conf` |
+| PQC | `ssl_ecdh_curve X25519MLKEM768:...` | `deploy/nginx/memo-pill.conf` |
+
+**Por que o Nginx roda em container:** o grupo pós-quântico `X25519MLKEM768`
+só existe no OpenSSL 3.5+, e o Debian 12 traz OpenSSL 3.0 — o Nginx do apt,
+ligado a ele, não consegue negociar PQC e o teste da DigiCert reprovaria. Em
+vez de trocar o sistema operacional ou compilar o Nginx à mão, o Nginx vem da
+imagem oficial `nginx:alpine`, que traz OpenSSL 3.5+. O `setup-server.sh`
+confere a versão do OpenSSL da imagem e aborta se for inferior a 3.5.
+
+- **`--network host`:** sem NAT do Docker. O Nginx escuta direto nas portas 80
+  e 443 do host, então o **UFW continua valendo** (uma porta publicada com `-p`
+  seria liberada pelo Docker por fora do UFW), o proxy alcança
+  `127.0.0.1:3000` e o `$remote_addr` é o IP real do cliente — que é o que o
+  rate limit da aplicação precisa.
+- **Montagens somente leitura:** configuração, `/etc/letsencrypt` e o webroot
+  do ACME. O Certbot continua no host; o hook de renovação executa
+  `docker exec nginx nginx -s reload`.
+- **Atualizar o Nginx:** rodar de novo o `setup-server.sh` com os mesmos
+  argumentos — ele baixa a imagem mais recente e recria o container, sem
+  reemitir o certificado nem sobrescrever o `.env`.
+
+**Por que certificado de curta duração:** a Let's Encrypt só emite certificado
+para endereço IP no perfil `shortlived` (~6 dias). A renovação automática deixa
+de ser conveniência e passa a ser o que mantém o site no ar; o timer do snap do
+Certbot roda duas vezes ao dia e o `--deploy-hook` recarrega o Nginx.
+
+#### Passo a passo
+
+1. **Criar a VM no portal da Azure:** imagem **Debian 12 (bookworm)**, tamanho
+   elegível ao free tier, autenticação **por chave SSH** (nunca senha), IP
+   público estático. No NSG, regras de entrada apenas para 22, 80 e 443.
+2. **Gerar a chave exclusiva do pipeline** (na sua máquina — não reutilize a sua
+   chave pessoal):
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/memo-pill-deploy -C "github-actions" -N ""
+   ```
+3. **Provisionar a VM** (uma vez):
+   ```bash
+   scp -r deploy azureuser@<IP>:~/
+   ssh azureuser@<IP>
+   sudo bash ~/deploy/setup-server.sh <IP> <seu-email> "$(cat ~/.ssh/memo-pill-deploy.pub)"
+   ```
+   O script instala pacotes, endurece o SSH, liga UFW e Fail2Ban, instala
+   Docker, Node 22 e PM2, cria o usuário `deploy`, **gera o `.env` com segredos na
+   própria VM** (JWT e VAPID nunca passam pelo GitHub), emite o certificado e
+   sobe o Nginx em container com a configuração definitiva. Passe a chave pública entre aspas, no terceiro
+   argumento, já que ela vem do arquivo `.pub` da sua máquina.
+4. **Cadastrar os Secrets** em *Settings → Secrets and variables → Actions*:
+
+   | Secret | Valor |
+   |---|---|
+   | `SSH_HOST` | IP público da VM |
+   | `SSH_USER` | `deploy` |
+   | `SSH_PRIVATE_KEY` | conteúdo de `~/.ssh/memo-pill-deploy` |
+   | `SSH_KNOWN_HOSTS` | saída de `ssh-keyscan -t ed25519 <IP>` |
+
+5. **Publicar:** `git push origin main`. O workflow roda os testes, compila e
+   publica; a partir daí todo push na `main` repete o ciclo.
+
+#### Evidências de conformidade
+
+- [ssl.org](https://www.ssl.org/) com o IP: *Certificate Trusted: YES* e
+  *Good signature · Acceptable key* — `docs/evidencias/ssl-org.png`.
+- [DigiCert PQC checker](https://www.digicert.com/pqc-checker): suporte a
+  PQC ativo — `docs/evidencias/digicert-pqc.png`.
+- `fail2ban-client status sshd`, `ufw status verbose` e `certbot renew --dry-run`
+  — saídas no final do `setup-server.sh`.
+
+#### Teste local da produção (antes de ir para a Azure)
+
+```bash
+deploy/local-test/run.sh        # sobe, publica e verifica (deixa no ar em https://127.0.0.1:8443)
+deploy/local-test/run.sh down   # derruba e apaga os temporários
+```
+
+Sobe um "servidor" **Debian 12** com sshd endurecido, Node 22 e PM2, e o
+**mesmo Nginx em container** da produção compartilhando a rede dele. Publica
+com o **mesmo `deploy/deploy.sh`** que o GitHub Actions usa (duas vezes, para
+exercitar o redeploy) e roda 17 verificações: `.env` e banco preservados,
+migrations no boot, PM2 em fork, SSH sem senha e sem root, 301 para HTTPS,
+HSTS/CSP, **handshake com `X25519MLKEM768`**, fallback clássico, TLS 1.1
+recusado e rate limit por cliente atrás do proxy — este último validado por
+mutação: sem o `trust proxy`, um segundo cliente com outro IP é bloqueado junto.
+
+Precisa de Docker e de OpenSSL 3.5+ no host. Não cobre o que exige IP público
+ou systemd — certificado Let's Encrypt, UFW e Fail2Ban —, conferidos na VM pela
+saída do `setup-server.sh`.
+
+### Eixo 2 — Repositório
+
+- Repositório **público** no GitHub, conta com **2FA** ativado; `commit` e
+  `push` por **chave SSH** dedicada (sem senha nem token em texto).
+- `.gitignore` bloqueia `.env`, bancos SQLite (`*.db`, `*-wal`, `*-shm`),
+  `dist/`, `node_modules/` e `coverage/`. O único arquivo de ambiente
+  versionado é o `.env.example`, sem nenhum segredo real.
+- Segredos de produção são gerados **na VM** pelo `setup-server.sh`; as
+  credenciais do pipeline vivem só em GitHub Secrets.
+
+### Integração e entrega contínuas (`.github/workflows/deploy.yml`)
+
+| Job | O que faz |
+|---|---|
+| `test` | `npm ci`, `npm audit --omit=dev --audit-level=critical`, `npm test`, `npm run build`; guarda o build como artefato |
+| `deploy` | só em push na `main`: `rsync` de `dist/`, `public/`, `views/` para `/opt/memo-pill`, `npm ci --omit=dev` na VM, `pm2 startOrReload`, e confere se `/login` responde |
+
+Decisões de segurança do pipeline:
+
+- **Credenciais só em GitHub Secrets.** O YAML não contém IP, usuário nem chave.
+- **`SSH_KNOWN_HOSTS` fixado**, com `StrictHostKeyChecking yes`: o pipeline
+  recusa um servidor que não seja o seu, em vez de aceitar qualquer host.
+- **Chave dedicada a um usuário sem sudo** (`deploy`), dono apenas de
+  `/opt/memo-pill`. Vazar essa chave não dá controle da máquina.
+- **`permissions: contents: read`** — o token do workflow não pode escrever no repositório.
+- **O `.env` e o banco não viajam.** O `rsync --delete` atua dentro de cada
+  diretório enviado; `.env`, `data/` e `node_modules/` da VM ficam intactos.
+- **Pull request só testa**; publicar é exclusivo do push na `main`.
+
+### Pontos que não são opcionais
+
+- **`NODE_ENV=production` é obrigatório** (vem do `ecosystem.config.js`). É essa
+  variável que troca `synchronize` por `migrationsRun`: com ela, as migrations
+  versionadas de `dist/database/migrations/` são aplicadas no boot; sem ela, o
+  TypeORM sincroniza o schema a partir das entidades — aceitável em
+  desenvolvimento e inaceitável sobre dados reais. Ela também liga HSTS,
+  `upgrade-insecure-requests`, cookies `Secure` e o `trust proxy`.
+- **Instância única em fork.** O agendador roda dentro do processo; em cluster
+  mode cada dose seria notificada N vezes.
+- **`trust proxy` restrito ao loopback.** Atrás do Nginx, sem ele toda
+  requisição parece vir de `127.0.0.1` e o rate limit por IP vira um balde
+  único para todos os usuários (`configure-app.ts`).
 - **Backup do `DATABASE_PATH`.** Não há rotina de backup no código — ver
   "Pontos de atenção" abaixo.
-
-Deploys seguintes: `git pull && npm ci && npm run build && pm2 restart lembrete-medicamentos`.
 
 ### Migrations
 
@@ -163,7 +285,7 @@ npm run test:cov   # com cobertura
 npm run test:watch # em watch
 ```
 
-181 testes em 12 suítes, cobrindo quatro níveis:
+299 testes em 17 suítes, cobrindo quatro níveis:
 
 - **Unitário puro** — geração de doses (fusos, horizonte, DST), helpers de view, CSRF.
 - **Integração com SQLite real** (`:memory:`, mesmos PRAGMAs da produção) — soft delete,
@@ -213,27 +335,37 @@ O transporte é um cookie de uso único (`flash`, `HttpOnly`, 60s), lido e apaga
 pelo `FlashMiddleware`, que o entrega ao layout em `res.locals`. Por isso o
 toast funciona em qualquer tela sem que o controller precise repassá-lo.
 
-## Segurança — OWASP Top 10 (2021)
+## Segurança — OWASP Top 10:2025
 
-Os dez riscos do OWASP Top 10 estão endereçados abaixo, com o ponto do código
-que sustenta cada um. **Sete** já estavam implementados quando esta seção foi
-escrita — o levantamento apenas os documentou; **três** (A06, A09, A10) têm
-cobertura parcial e as lacunas estão nomeadas ao final, sem maquiagem.
+### As três categorias escolhidas
+
+A disciplina exige a mitigação de no mínimo três categorias do
+[OWASP Top 10:2025](https://owasp.org/Top10/2025/). As três escolhidas como
+entrega principal, com o ponto exato do código:
+
+| Categoria | Como o código previne | Onde |
+|---|---|---|
+| **A01:2025 — Broken Access Control** | Guard de sessão em toda classe de controller; toda consulta filtrada por `user_id`; recurso alheio devolve 404; `ParseUUIDPipe` em todo `:id` | `src/auth/session.guard.ts`, `medications.service.ts` (`requireOwned`), `doses.service.ts` |
+| **A05:2025 — Injection** | Queries parametrizadas (TypeORM); escape do Handlebars; CSP sem `unsafe-inline`; `ValidationPipe` com `whitelist` + `forbidNonWhitelisted` | `src/configure-app.ts`, `src/app.module.ts`, DTOs em `*/dto/`, `test/dashboard.view.spec.ts` |
+| **A07:2025 — Authentication Failures** | bcrypt; rate limit de 5/min no login; anti-enumeração por tempo constante; tokens tipados; logout que revoga o token no servidor | `src/auth/auth.service.ts`, `src/auth/auth.controller.ts`, `src/logout/` |
+
+As demais categorias também têm controles, documentados abaixo com o mesmo
+rigor — e com as lacunas nomeadas, sem maquiagem.
 
 | # | Risco | Situação | Principal controle |
 |---|---|---|---|
-| A01 | Broken Access Control | Coberto | `SessionGuard` + escopo por `user_id` em toda consulta |
-| A02 | Cryptographic Failures | Coberto | bcrypt, JWT, cookies `HttpOnly`/`Secure`, TLS + HSTS |
-| A03 | Injection | Coberto | Queries parametrizadas, escape do Handlebars, CSP sem `unsafe-inline` |
-| A04 | Insecure Design | Coberto | ADR-001, idempotência, claim atômico, consentimento obrigatório |
-| A05 | Security Misconfiguration | Coberto | Helmet/CSP explícita, segredos só em env, boot falha se faltar |
-| A06 | Vulnerable and Outdated Components | **Parcial** | `npm ci` com lock; `multer` transitivo pendente |
-| A07 | Identification and Authentication Failures | Coberto | Rate limit em credenciais, anti-enumeração, tokens tipados |
-| A08 | Software and Data Integrity Failures | Coberto | Zero CDN, assets da própria origem, migrations versionadas |
-| A09 | Security Logging and Monitoring Failures | **Parcial** | Log de push/agendador; sem trilha de autenticação |
-| A10 | Server-Side Request Forgery | **Parcial** | Endpoint push exige sessão; sem allowlist de host |
+| A01 | Broken Access Control (inclui SSRF) | Coberto · SSRF parcial | `SessionGuard` + escopo por `user_id`; push sem allowlist de host |
+| A02 | Security Misconfiguration | Coberto | Helmet/CSP explícita, segredos só em env, `trust proxy` restrito, firewall mínimo |
+| A03 | Software Supply Chain Failures | **Parcial** | `npm ci` com lock, `npm audit` no CI; `multer` transitivo pendente |
+| A04 | Cryptographic Failures | Coberto | bcrypt, JWT, cookies `HttpOnly`/`Secure`, TLS 1.2+/PQC + HSTS |
+| A05 | Injection | Coberto | Queries parametrizadas, escape do Handlebars, CSP sem `unsafe-inline` |
+| A06 | Insecure Design | Coberto | ADR-001, CSRF, idempotência, claim atômico, consentimento obrigatório |
+| A07 | Authentication Failures | Coberto | Rate limit, anti-enumeração, tokens tipados, revogação, Fail2Ban no SSH |
+| A08 | Software or Data Integrity Failures | Coberto | Zero CDN, migrations versionadas, artefato testado é o publicado |
+| A09 | Security Logging and Alerting Failures | **Parcial** | Log de push/agendador; sem trilha de autenticação |
+| A10 | Mishandling of Exceptional Conditions | Coberto | Filtro único de exceções, falha fechada no boot, sem vazamento de stack |
 
-### A01 — Broken Access Control
+### A01:2025 — Broken Access Control
 
 Autorização em duas camadas, porque só a primeira não impede IDOR:
 
@@ -257,7 +389,66 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   pela aplicação); erro inesperado vira 500 genérico, para que `stack` e
   mensagem do SQLite não cheguem ao cliente.
 
-### A02 — Cryptographic Failures
+#### SSRF (incorporado ao A01 na edição 2025)
+
+A aplicação não busca URLs informadas pelo usuário — não há proxy, webhook nem
+importação por link. Resta **uma** requisição de saída: o POST do Web Push para
+o `endpoint` da inscrição, que vem do navegador do cliente.
+
+- Controles presentes: `/push/inscrever` exige sessão válida
+  (`push.controller.ts:15`), o `endpoint` é limitado a 1000 caracteres e o corpo
+  enviado contém apenas `{ doseId }` — nada de dado sensível para exfiltrar.
+- **Lacuna:** não há allowlist de host. Um usuário autenticado pode registrar um
+  endpoint arbitrário e fazer o servidor emitir um POST para ele, inclusive para
+  a rede interna. A resposta não retorna ao cliente (só o status HTTP influencia
+  a remoção da inscrição), o que limita o proveito a um SSRF cego. A correção é
+  validar o host contra os domínios conhecidos de push service
+  (`*.googleapis.com`, `*.push.apple.com`, `*.notify.windows.com`,
+  `*.push.services.mozilla.com`) no `SubscribeDto`.
+
+### A02:2025 — Security Misconfiguration
+
+- **Helmet com CSP explícita**, não a padrão: `default-src 'self'`,
+  `object-src 'none'` e `frame-ancestors 'none'` — este último é a proteção
+  anti-clickjacking (`configure-app.ts:28-29`).
+- **Segredos apenas em variável de ambiente.** `JWT_SECRET`,
+  `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` não têm valor padrão: a aplicação
+  **falha no boot** com mensagem explícita se faltarem (`configuration.ts:31`).
+  Um segredo de desenvolvimento nunca vaza para produção por descuido.
+- `.env`, `*.db`, `*.db-wal` e `*.db-shm` estão no `.gitignore`.
+- `PRAGMA foreign_keys = ON` a cada conexão (o SQLite deixa desligado por
+  padrão, o que permitiria órfãos).
+- **O risco de configuração desta app tem nome:** rodar em produção sem
+  `NODE_ENV=production` mantém `synchronize: true` no TypeORM, deixando o
+  schema ser reescrito a partir das entidades. Ver "Como subir em produção".
+- Superfície de rede mínima: UFW expõe 22, 80 e 443; a porta 3000 fica fechada.
+- **`trust proxy` só para o loopback em produção** (`configure-app.ts`): sem
+  ele, atrás do Nginx, todo cliente teria o IP `127.0.0.1` e o rate limit seria
+  um contador único compartilhado por todos; com `true` em vez de `loopback`,
+  qualquer cliente forjaria o próprio IP via `X-Forwarded-For`.
+- **Infraestrutura mínima:** NSG da Azure e UFW com entrada apenas em 22, 80 e
+  443; SSH sem senha e sem root; `server_tokens off` no Nginx.
+
+### A03:2025 — Software Supply Chain Failures
+
+- Dependências em versão corrente (NestJS 11), `package-lock.json` versionado e
+  `npm ci` no deploy — instalação reprodutível, sem resolução surpresa.
+- **Pendência real:** `npm audit --omit=dev` reporta 5 vulnerabilidades high em
+  `multer` (≤ 2.2.0), dependência transitiva do `@nestjs/platform-express`,
+  todas de negação de serviço via upload multipart. A aplicação **não tem rota
+  de upload** — nenhum `FileInterceptor` é usado — então o multer nunca é
+  invocado e o risco prático é nulo hoje. Ainda assim, o `@nestjs/platform-express`
+  fixa `multer@2.2.0` até a versão 12, e a correção limpa é um override no
+  `package.json`:
+
+  ```json
+  "overrides": { "multer": "^2.3.0" }
+  ```
+
+  O pipeline roda `npm audit --omit=dev --audit-level=critical` a cada push e
+  bloqueia o deploy se aparecer vulnerabilidade crítica.
+
+### A04:2025 — Cryptographic Failures
 
 - **Senhas:** bcrypt com custo injetável (`auth.service.ts:44`); o DTO limita a
   senha a 72 bytes porque o bcrypt trunca acima disso, o que silenciosamente
@@ -268,7 +459,7 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   produção, `SameSite=Lax` (`auth.controller.ts:62-67`). `Lax` e não `Strict` é
   escolha deliberada: `Strict` suprimiria o cookie na navegação vinda do clique
   na notificação push, que é o fluxo central do produto — e é justamente por
-  isso que existe token CSRF (ver A03).
+  isso que existe token CSRF (ver A06).
 - **Token CSRF:** `randomBytes(32)` e comparação em tempo constante com
   `timingSafeEqual` (`csrf.service.ts:18`, `:25`).
 - **Em trânsito:** TLS termina no Nginx e o HSTS só é anunciado em produção
@@ -277,8 +468,11 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
 - **Dado de saúde não trafega por terceiro:** o payload enviado ao push service
   (FCM/APNs) contém apenas `{ doseId }`; o nome do medicamento é resolvido pelo
   Service Worker em `/doses/:id/resumo`, na própria origem.
+- **TLS na borda com PQC:** Nginx aceita só TLS 1.2/1.3 e oferece primeiro o
+  grupo híbrido `X25519MLKEM768` (`deploy/nginx/memo-pill.conf`); certificado
+  Let's Encrypt para o IP, renovado automaticamente.
 
-### A03 — Injection
+### A05:2025 — Injection
 
 - **SQL:** todo acesso passa pelo TypeORM com placeholders nomeados
   (`:userId`, `:id`, `:now`). Não há concatenação de entrada em SQL em nenhum
@@ -299,7 +493,7 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   faz a requisição falhar, em vez de ser ignorado em silêncio. Horários são
   validados por regex `HH:mm` e datas por `IsISO8601`.
 
-### A04 — Insecure Design
+### A06:2025 — Insecure Design
 
 - As decisões e os trade-offs de segurança são registrados por escrito no
   ADR-001 §2.4 antes do código — inclusive as recusadas.
@@ -316,42 +510,7 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   `notified_at` (`dose-scheduler.service.ts:101-103`) para que a dose não seja
   notificada duas vezes.
 
-### A05 — Security Misconfiguration
-
-- **Helmet com CSP explícita**, não a padrão: `default-src 'self'`,
-  `object-src 'none'` e `frame-ancestors 'none'` — este último é a proteção
-  anti-clickjacking (`configure-app.ts:28-29`).
-- **Segredos apenas em variável de ambiente.** `JWT_SECRET`,
-  `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` não têm valor padrão: a aplicação
-  **falha no boot** com mensagem explícita se faltarem (`configuration.ts:31`).
-  Um segredo de desenvolvimento nunca vaza para produção por descuido.
-- `.env`, `*.db`, `*.db-wal` e `*.db-shm` estão no `.gitignore`.
-- `PRAGMA foreign_keys = ON` a cada conexão (o SQLite deixa desligado por
-  padrão, o que permitiria órfãos).
-- **O risco de configuração desta app tem nome:** rodar em produção sem
-  `NODE_ENV=production` mantém `synchronize: true` no TypeORM, deixando o
-  schema ser reescrito a partir das entidades. Ver "Como subir em produção".
-- Superfície de rede mínima: UFW expõe 22, 80 e 443; a porta 3000 fica fechada.
-
-### A06 — Vulnerable and Outdated Components
-
-- Dependências em versão corrente (NestJS 11), `package-lock.json` versionado e
-  `npm ci` no deploy — instalação reprodutível, sem resolução surpresa.
-- **Pendência real:** `npm audit --omit=dev` reporta 5 vulnerabilidades high em
-  `multer` (≤ 2.2.0), dependência transitiva do `@nestjs/platform-express`,
-  todas de negação de serviço via upload multipart. A aplicação **não tem rota
-  de upload** — nenhum `FileInterceptor` é usado — então o multer nunca é
-  invocado e o risco prático é nulo hoje. Ainda assim, o `@nestjs/platform-express`
-  fixa `multer@2.2.0` até a versão 12, e a correção limpa é um override no
-  `package.json`:
-
-  ```json
-  "overrides": { "multer": "^2.3.0" }
-  ```
-
-  Rode `npm audit --omit=dev` antes de cada deploy.
-
-### A07 — Identification and Authentication Failures
+### A07:2025 — Authentication Failures
 
 - **Rate limiting em rotas de credencial:** 5 tentativas por minuto em
   `/auth/login` e `/auth/cadastro` via `@Throttle`
@@ -392,9 +551,10 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
 - Senha mínima de 8 caracteres; e-mail normalizado (`trim`/`lowercase`) antes de
   comparar, para que não existam duas contas com o mesmo e-mail em caixas
   diferentes.
-- Logout limpa o cookie de refresh.
+- **Na infraestrutura:** o SSH da VM aceita apenas chave, e o Fail2Ban bane
+  por 24 h o IP que errar 4 vezes (`deploy/fail2ban/jail.local`).
 
-### A08 — Software and Data Integrity Failures
+### A08:2025 — Software or Data Integrity Failures
 
 - **Nenhum recurso de terceiros em runtime.** Sem CDN, sem fonte externa, sem
   script de analytics: Tailwind é compilado para `public/css/app.css` e a CSP
@@ -405,8 +565,11 @@ Autorização em duas camadas, porque só a primeira não impede IDOR:
   "consertar" a árvore).
 - **Integridade do schema:** em produção o schema vem de migrations
   versionadas aplicadas no boot, nunca de alteração manual no banco.
+- **Integridade da entrega:** o que chega à VM é exatamente o que passou nos
+  testes no GitHub Actions — o artefato do job `test` é o que o job `deploy`
+  publica, e a identidade do servidor é conferida por `known_hosts` fixado.
 
-### A09 — Security Logging and Monitoring Failures
+### A09:2025 — Security Logging and Alerting Failures
 
 Item mais fraco do projeto, e assumido como tal:
 
@@ -420,43 +583,64 @@ Item mais fraco do projeto, e assumido como tal:
   silenciosa é o pior modo de falha possível. Mitigação prevista: healthcheck
   externo.
 
-### A10 — Server-Side Request Forgery (SSRF)
+### A10:2025 — Mishandling of Exceptional Conditions
 
-A aplicação não busca URLs informadas pelo usuário — não há proxy, webhook nem
-importação por link. Resta **uma** requisição de saída: o POST do Web Push para
-o `endpoint` da inscrição, que vem do navegador do cliente.
+Categoria nova da edição 2025: o que a aplicação faz quando algo sai do
+caminho feliz. A regra aqui é **falhar fechado e falar pouco**.
 
-- Controles presentes: `/push/inscrever` exige sessão válida
-  (`push.controller.ts:15`), o `endpoint` é limitado a 1000 caracteres e o corpo
-  enviado contém apenas `{ doseId }` — nada de dado sensível para exfiltrar.
-- **Lacuna:** não há allowlist de host. Um usuário autenticado pode registrar um
-  endpoint arbitrário e fazer o servidor emitir um POST para ele, inclusive para
-  a rede interna. A resposta não retorna ao cliente (só o status HTTP influencia
-  a remoção da inscrição), o que limita o proveito a um SSRF cego. A correção é
-  validar o host contra os domínios conhecidos de push service
-  (`*.googleapis.com`, `*.push.apple.com`, `*.notify.windows.com`,
-  `*.push.services.mozilla.com`) no `SubscribeDto`.
+- **Um único filtro de exceções** (`src/common/http-error.filter.ts`), com
+  `@Catch()` sem tipo: nenhuma exceção escapa sem tratamento. Erro que não é
+  `HttpException` vira 500 com mensagem genérica — `stack`, mensagem do SQLite
+  e nomes de tabela ficam só no log do servidor.
+- **Falha fechada no boot:** sem `JWT_SECRET` ou chaves VAPID a aplicação não
+  sobe (`src/config/configuration.ts`). Não existe valor padrão que a faça
+  rodar insegura.
+- **Sessão ausente ou inválida nega o acesso**, nunca o concede: o guard lança
+  401 e o filtro leva ao login.
+- **Resposta interrompida** (erro no meio da renderização) é encerrada com
+  `res.end()` em vez de tentar escrever um segundo cabeçalho.
+- **Redirecionamento de erro não vira open redirect:** o `Referer` só é
+  aproveitado se for do mesmo host; qualquer outra coisa cai na rota padrão.
+- **Condições esperadas não são erro:** registrar a mesma dose duas vezes é
+  idempotente, e a inscrição push que o serviço responde como expirada (404/410)
+  é removida, com até 3 tentativas para falhas transitórias.
+- **Logout à prova de falha:** sem guard e idempotente — sair com sessão vencida
+  ou com o JavaScript quebrado leva ao mesmo lugar.
 
 ### Lacunas conhecidas
 
 Listadas porque um TCC ganha mais em reconhecer o limite do escopo do que em
 alegar cobertura que não tem:
 
-1. **`multer` transitivo vulnerável** (A06) — sem impacto prático hoje; corrigir
+1. **`multer` transitivo vulnerável** (A03) — sem impacto prático hoje; corrigir
    com override.
 2. **Sem trilha de auditoria de autenticação** (A09).
-3. **Sem allowlist de host no endpoint push** (A10).
-4. **Sessão não revogável no servidor** (A07): o JWT é stateless, então um
-   refresh token vazado vale até expirar — até 30 dias. Logout limpa o cookie do
-   navegador, mas não invalida o token. Uma tabela de sessões ou uma coluna
-   `tokens_valid_from` no usuário resolveria.
-5. **Sem MFA e sem recuperação de senha** (A07) — fora do escopo.
-6. **Banco não cifrado em repouso.** O arquivo SQLite é legível por qualquer
+3. **Sem allowlist de host no endpoint push** (A01).
+4. **Sem MFA e sem recuperação de senha** (A07) — fora do escopo.
+5. **Banco não cifrado em repouso.** O arquivo SQLite é legível por qualquer
    processo com acesso ao disco da VPS; a proteção é o controle de acesso do
    sistema operacional.
-7. **Exclusão de conta não implementada** (LGPD, Art. 18) — não existe rota que
+6. **Exclusão de conta não implementada** (LGPD, Art. 18) — não existe rota que
    apague os dados do titular. O soft delete de medicamento preserva histórico
    por decisão de produto e não é mecanismo de exclusão de dados pessoais.
+
+## Desenvolvimento assistido por IA
+
+O código foi escrito, revisado e auditado com **Claude Code** (Anthropic), um
+ambiente de desenvolvimento baseado em IA equivalente ao Google Antigravity
+indicado na disciplina. A IA foi usada para:
+
+- **Geração de código** a partir do ADR-001, módulo por módulo, com os testes
+  escritos junto (299 testes).
+- **Auditoria de segurança**: revisão de cada controle contra o OWASP Top
+  10:2025 — foi numa dessas revisões que apareceu a falta do `trust proxy`
+  atrás do Nginx, que anulava o rate limit por IP em produção.
+- **Depuração e refatoração**: corrida no registro de parciais do Handlebars,
+  revogação de sessão no servidor, tratamento de erro navegador × Service Worker.
+- **Infraestrutura como código**: workflow do GitHub Actions, configuração do
+  Nginx com PQC, Fail2Ban, endurecimento do SSH e script de provisionamento.
+
+Toda sugestão passou por revisão humana e pela suíte de testes antes do commit.
 
 ## Convenção de idioma
 
@@ -483,6 +667,9 @@ views/           dashboard, login, medications, medication-new, history, error
   partials/      nav (sidebar + barra inferior), toast e logout
 public/          Service Worker, inscrição push, manifest, CSS compilado e ícones
 test/            e2e e renderização de view
+deploy/          Nginx (TLS/PQC, em container), Fail2Ban, SSH, provisionamento, deploy.sh e teste local
+.github/workflows/deploy.yml   CI/CD: testes, build e deploy na Azure a cada push na main
+ecosystem.config.js            processo PM2 de produção
 ```
 
 O agendador varre as doses a cada minuto (`* * * * *`) e materializa o horizonte

@@ -15,6 +15,12 @@ const ROOT = join(__dirname, "..");
 export function configureApp(app: NestExpressApplication): void {
 	const isProduction = process.env.NODE_ENV === "production";
 
+	// Em produção o Nginx, na mesma máquina, é quem conversa com o cliente: sem
+	// isto toda requisição chega de 127.0.0.1 e o rate limit por IP vira um
+	// balde único — cinco logins errados de qualquer um travariam todos.
+	// Só o loopback é confiável: um X-Forwarded-For vindo de fora é ignorado.
+	if (isProduction) app.set("trust proxy", "loopback");
+
 	app.use(cookieParser());
 	app.use(
 		helmet({
